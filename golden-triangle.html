@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Golden Triangle</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;user-select:none;-webkit-user-select:none}
+canvas{display:block;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+// ── Constants ──────────────────────────────────────────────────
+const W = 960, H = 540;
+const CX = 480, CY = 270; // board center
+const S = 66; // triangle side
+const TH = S * 0.8660254; // triangle height
+const PIECE_S = 62; // piece render side (slightly smaller than slot)
+
+// Colors
+const COL = {
+  bgDeep: "#1B202A", bgMid: "#2B3340",
+  goldBase: "#C9A24A", goldHi: "#E7D08A", goldSh: "#8A6A22",
+  white: "#F2F2F2", whiteSh: "#CFCFCF",
+  black: "#121212", blackHi: "#3A3A3A",
+  slotOutline: "#6F7A89",
+  accent: "#62B6FF",
+  denied: "#FF5A6A",
+  goldenBright: "#F5D96B"
+};
+
+// ── Audio ─────────────────────────────────────────────────────
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+function playPlaceClick() {
+  ensureAudio();
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+
+  // Master gain – very faint
+  const master = ctx.createGain();
+  master.gain.value = 0.055;
+  master.connect(ctx.destination);
+
+  // 1. Short noise burst for the transient "tick"
+  const noiseDur = 0.012;
+  const noiseLen = Math.ceil(ctx.sampleRate * noiseDur);
+  const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+  const noiseData = noiseBuf.getChannelData(0);
+  for (let i = 0; i < noiseLen; i++) {
+    noiseData[i] = (Math.random() * 2 - 1) * (1 - i / noiseLen);
+  }
+  const noiseSrc = ctx.createBufferSource();
+  noiseSrc.buffer = noiseBuf;
+
+  // Bandpass to give it a hard acrylic character
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 1800;
+  bp.Q.value = 0.8;
+
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.9, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + noiseDur);
+
+  noiseSrc.connect(bp);
+  bp.connect(noiseGain);
+  noiseGain.connect(master);
+  noiseSrc.start(now);
+  noiseSrc.stop(now + noiseDur);
+
+  // 2. Brief high-frequency ping for acrylic resonance
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.value = 1600;
+  const oscGain = ctx.createGain();
+  oscGain.gain.setValueAtTime(0.12, now);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
+  osc.connect(oscGain);
+  oscGain.connect(master);
+  osc.start(now);
+  osc.stop(now + 0.022);
+}
+
+// ── Slot Definitions ───────────────────────────────────────────
+// 4-band triangular tiling: 5, 7, 5, 4 = 21 slots
+// In a proper tiling, ↑ and ↓ triangles have DIFFERENT y-centers
+// (offset by TH/3 ≈ 20.78) so their edges actually align.
+// ↑ centroid is at y_band + 2*TH/3, ↓ centroid is at y_band + TH/3
+// Board is vertically centered by offsetting -2*TH from the top.
+const T3 = TH / 3;   // ≈ 20.78
+const T23 = 2*TH / 3;
+const HS = S / 2;  // half side length
+
+const SLOTS = [
+  // Band 0 (top, 5 slots): ↑ ↓ ↑ ↓ ↑
+  {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
+  {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
+  {id:2,  x:  0,   y:-4*T3, ori:"up"},
+  {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
+  {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
+  // Band 1 (7 slots): ↑ ↓ ↑ ↓ ↑ ↓ ↑
+  {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
+  {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
+  {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
+  {id:8,  x:  0,   y:-2*T3, ori:"down"},
+  {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
+  {id:10, x: 2*HS, y:-2*T3, ori:"down"},
+  {id:11, x: 3*HS, y:-1*T3, ori:"up"},
+  // Band 2 (4 slots): ↓ ↑ ↓ ↑
+  {id:12, x:-3*HS, y: 1*T3, ori:"down"},
+  {id:13, x:-2*HS, y: 2*T3, ori:"up"},
+  {id:14, x:-1*HS, y: 1*T3, ori:"down"},
+  {id:15, x:  0,   y: 2*T3, ori:"up"},
+  // Band 3 (bottom, 5 slots): ↓ ↑ ↓ ↑ ↓
+  {id:16, x:-2*HS, y: 4*T3, ori:"down"},
+  {id:17, x:-1*HS, y: 5*T3, ori:"up"},
+  {id:18, x:  0,   y: 4*T3, ori:"down"},
+  {id:19, x: 1*HS, y: 5*T3, ori:"up"},
+  {id:20, x: 2*HS, y: 4*T3, ori:"down"}
+];
+
+// 24 edges total (17 within-band + 7 between-band)
+// Between-band: ↑ base on VRow N+1 matches ↓ top on same VRow
+//   Band0→1: 0↔6, 2↔8, 4↔10
+//   Band1→2: 5↔12, 7↔14
+//   Band2→3: 13↔16, 15↔18
+const ADJ = [
+  [1, 6],          // 0
+  [0, 2],          // 1
+  [1, 3, 8],       // 2
+  [2, 4],          // 3
+  [3, 10],         // 4
+  [6, 12],         // 5
+  [0, 5, 7],       // 6
+  [6, 8, 14],      // 7
+  [2, 7, 9],       // 8
+  [8, 10],         // 9
+  [4, 9, 11],      // 10
+  [10],            // 11
+  [5, 13],         // 12
+  [12, 14, 16],    // 13
+  [7, 13, 15],     // 14
+  [14, 18],        // 15
+  [13, 17],        // 16
+  [16, 18],        // 17
+  [15, 17, 19],    // 18
+  [18, 20],        // 19
+  [19]             // 20
+];
+
+// ── Canvas Setup ───────────────────────────────────────────────
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+let gScale = 1, gOffX = 0, gOffY = 0, gDPR = 1;
+
+function resize() {
+  const ww = window.innerWidth, wh = window.innerHeight;
+  const s = Math.min(ww / W, wh / H);
+  const dpr = window.devicePixelRatio || 1;
+  gScale = s;
+  gDPR = s * dpr;
+  canvas.style.width = (W * s) + "px";
+  canvas.style.height = (H * s) + "px";
+  canvas.width = Math.round(W * s * dpr);
+  canvas.height = Math.round(H * s * dpr);
+  gOffX = 0; gOffY = 0;
+}
+window.addEventListener("resize", resize);
+resize();
+
+function screenToCanvas(sx, sy) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (sx - rect.left) / gScale,
+    y: (sy - rect.top) / gScale
+  };
+}
+
+// ── Triangle Geometry Helpers ──────────────────────────────────
+function triVerts(cx, cy, side, ori) {
+  const h = side * 0.8660254;
+  if (ori === "up") {
+    return [
+      {x: cx, y: cy - 2*h/3},
+      {x: cx - side/2, y: cy + h/3},
+      {x: cx + side/2, y: cy + h/3}
+    ];
+  } else {
+    return [
+      {x: cx, y: cy + 2*h/3},
+      {x: cx - side/2, y: cy - h/3},
+      {x: cx + side/2, y: cy - h/3}
+    ];
+  }
+}
+
+function pointInTri(px, py, v) {
+  const d1 = (px-v[1].x)*(v[0].y-v[1].y)-(v[0].x-v[1].x)*(py-v[1].y);
+  const d2 = (px-v[2].x)*(v[1].y-v[2].y)-(v[1].x-v[2].x)*(py-v[2].y);
+  const d3 = (px-v[0].x)*(v[2].y-v[0].y)-(v[2].x-v[0].x)*(py-v[0].y);
+  const hasNeg = (d1<0)||(d2<0)||(d3<0);
+  const hasPos = (d1>0)||(d2>0)||(d3>0);
+  return !(hasNeg && hasPos);
+}
+
+function pointInTriPadded(px, py, cx, cy, side, ori, pad) {
+  const v = triVerts(cx, cy, side + pad*2, ori);
+  return pointInTri(px, py, v);
+}
+
+// ── Tween Engine ───────────────────────────────────────────────
+let tweens = [];
+
+function addTween(obj, prop, from, to, dur, ease, onDone, tag) {
+  if (tag) killTweens(tag);
+  const t = {obj, prop, from, to, dur, elapsed: 0, ease: ease||easeOut, onDone: onDone||null, tag: tag||null, done: false};
+  if (obj && prop) obj[prop] = from;
+  tweens.push(t);
+  return t;
+}
+
+function killTweens(tag) {
+  tweens = tweens.filter(t => t.tag !== tag);
+}
+
+function updateTweens(dt) {
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const t = tweens[i];
+    t.elapsed += dt;
+    let p = Math.min(t.elapsed / t.dur, 1);
+    p = t.ease(p);
+    if (t.obj && t.prop) t.obj[t.prop] = t.from + (t.to - t.from) * p;
+    if (t.elapsed >= t.dur) {
+      if (t.obj && t.prop) t.obj[t.prop] = t.to;
+      if (t.onDone) t.onDone();
+      tweens.splice(i, 1);
+    }
+  }
+}
+
+function easeOut(t) { return 1 - (1-t)*(1-t); }
+function easeInOut(t) { return t < 0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+function linear(t) { return t; }
+
+// ── Background Specks ──────────────────────────────────────────
+const specks = [];
+for (let i = 0; i < 20; i++) {
+  specks.push({
+    x: Math.random()*W, y: Math.random()*H,
+    vx: (Math.random()-0.5)*8, vy: (Math.random()-0.5)*8,
+    r: Math.random()*1.5+0.5, a: Math.random()*0.3+0.1
+  });
+}
+
+function updateSpecks(dt) {
+  for (const s of specks) {
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    if (s.x < 0) s.x += W; if (s.x > W) s.x -= W;
+    if (s.y < 0) s.y += H; if (s.y > H) s.y -= H;
+  }
+}
+
+// ── Game State ─────────────────────────────────────────────────
+function freshState() {
+  return {
+    phase: "menu", // menu, playing, paused, roundResult, gameOver
+    round: 1,
+    turnCount: 0,
+    currentPlayer: 0, // 0=white, 1=black
+    firstPlayer: 0,   // who starts round 1
+    board: new Array(21).fill(null), // null or {owner:0|1, value:1-10}
+    whitePieces: Array.from({length:10},(_,i)=>({value:i+1, used:false})),
+    blackPieces: Array.from({length:10},(_,i)=>({value:i+1, used:false})),
+    selectedPiece: null, // {owner, value} or null
+    scores: [0, 0], // cumulative [white, black]
+    roundScores: [0, 0],
+    goldenSlot: -1,
+    // animation state per slot
+    slotAnim: Array.from({length:21}, ()=>({scale:1, shakeX:0, outlineFlash:0, glow:0, hoverTint:0})),
+    // tray piece animation state
+    trayAnim: Array.from({length:20}, ()=>({scale:1})), // 0-9 white, 10-19 black
+    // UI state
+    cameraZoom: 1,
+    goldFlash: 0,
+    menuAlpha: 1,
+    menuSlide: 0,
+    resultScale: 0,
+    toasts: [],
+    floatLabels: [],
+    revealStep: -1,
+    shimmer: 0,
+    gframePulse: 0,
+    intensityLevel: 0,
+    // progressive intensity overrides
+    outlineBrighten: 0,
+    vignette: 0,
+    gframeGlow: 0
+  };
+}
+
+let state = freshState();
+let prevTime = performance.now();
+
+// ── Tray Layout ────────────────────────────────────────────────
+const TRAY_WHITE_CX = 150, TRAY_BLACK_CX = 810;
+const TRAY_WHITE_CY = 170, TRAY_BLACK_CY = 170;
+const TRAY_PIECE_S = 44; // smaller triangles for tray
+const TRAY_COLS = 5, TRAY_ROWS = 2;
+const TRAY_SPACEX = 52, TRAY_SPACEY = 56;
+
+function trayPiecePos(owner, index) {
+  const baseCx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
+  const baseCy = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
+  const col = index % TRAY_COLS;
+  const row = Math.floor(index / TRAY_COLS);
+  const x = baseCx + (col - 2) * TRAY_SPACEX;
+  const y = baseCy + (row - 0.5) * TRAY_SPACEY;
+  return {x, y};
+}
+
+// ── Drawing Helpers ────────────────────────────────────────────
+function drawTriPath(ctx, cx, cy, side, ori) {
+  const v = triVerts(cx, cy, side, ori);
+  ctx.beginPath();
+  ctx.moveTo(v[0].x, v[0].y);
+  ctx.lineTo(v[1].x, v[1].y);
+  ctx.lineTo(v[2].x, v[2].y);
+  ctx.closePath();
+}
+
+function drawBevelTri(ctx, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, label, scale) {
+  scale = scale || 1;
+  const s = side * scale;
+  ctx.save();
+  // base fill
+  drawTriPath(ctx, cx, cy, s, ori);
+  ctx.fillStyle = baseCol;
+  ctx.fill();
+  // bevel: lighter on top edge, darker on bottom
+  const v = triVerts(cx, cy, s, ori);
+  if (ori === "up") {
+    // highlight: left edge
+    ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); ctx.lineTo(v[1].x, v[1].y);
+    ctx.strokeStyle = hiCol; ctx.lineWidth = 2.5; ctx.stroke();
+    // shadow: right edge + bottom
+    ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); ctx.lineTo(v[2].x, v[2].y);
+    ctx.strokeStyle = shCol; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(v[1].x, v[1].y); ctx.lineTo(v[2].x, v[2].y);
+    ctx.strokeStyle = shCol; ctx.lineWidth = 2; ctx.stroke();
+  } else {
+    // highlight: top edge
+    ctx.beginPath(); ctx.moveTo(v[1].x, v[1].y); ctx.lineTo(v[2].x, v[2].y);
+    ctx.strokeStyle = hiCol; ctx.lineWidth = 2.5; ctx.stroke();
+    // shadow: left + right
+    ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); ctx.lineTo(v[1].x, v[1].y);
+    ctx.strokeStyle = shCol; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); ctx.lineTo(v[2].x, v[2].y);
+    ctx.strokeStyle = shCol; ctx.lineWidth = 2; ctx.stroke();
+  }
+  // label
+  if (label !== undefined && label !== null) {
+    const fontSize = Math.max(16, s * 0.42)|0;
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const labelOff = ori === "up" ? s*0.08 : -s*0.08;
+    ctx.fillStyle = labelCol;
+    ctx.fillText(String(label), cx, cy + labelOff);
+  }
+  ctx.restore();
+}
+
+// ── G-Frame Drawing ────────────────────────────────────────────
+function drawGFrame(ctx, now) {
+  ctx.save();
+  // The G-frame is a hex ring with upper-right gap + horizontal crossbar
+  // Outer hex vertices (flat-top hex, relative to CX, CY)
+  const outerR = 232;
+  const innerR = 160;
+  const thick = outerR - innerR;
+
+  // 6 segments of the hex frame, with segment 1 (upper-right) removed for the G gap
+  // Hex vertices (flat-top): angles at 0, 60, 120, 180, 240, 300
+  function hexPt(r, a) {
+    const rad = a * Math.PI / 180;
+    return {x: CX + r * Math.cos(rad), y: CY + r * Math.sin(rad)};
+  }
+
+  const angles = [0, 60, 120, 180, 240, 300];
+  const outerPts = angles.map(a => hexPt(outerR, a));
+  const innerPts = angles.map(a => hexPt(innerR, a));
+
+  // Draw full hex ring minus the upper-right gap (between angle 300 and 0 / segment 5→0)
+  // The "G" gap is between vertices at 300° and 360°(0°) on the outer ring
+  // The crossbar goes from the right side inward at about y = CY
+
+  // Draw the hex ring as filled segments
+  const pulseAmt = state.gframeGlow * (0.5 + 0.5 * Math.sin(now / 600));
+
+  for (let i = 0; i < 6; i++) {
+    // Skip segment from vertex 5(300°) to vertex 0(0°) for the G gap
+    if (i === 5) continue;
+
+    const i2 = (i + 1) % 6;
+    const o1 = outerPts[i], o2 = outerPts[i2];
+    const n1 = innerPts[i], n2 = innerPts[i2];
+
+    ctx.beginPath();
+    ctx.moveTo(o1.x, o1.y);
+    ctx.lineTo(o2.x, o2.y);
+    ctx.lineTo(n2.x, n2.y);
+    ctx.lineTo(n1.x, n1.y);
+    ctx.closePath();
+
+    // 3-tone gold fill
+    const grd = ctx.createLinearGradient(o1.x, o1.y - 20, o2.x, o2.y + 20);
+    const hiBoost = state.outlineBrighten * 0.15 + pulseAmt * 0.2;
+    grd.addColorStop(0, lerpColor(COL.goldHi, "#FFFFFF", hiBoost));
+    grd.addColorStop(0.5, lerpColor(COL.goldBase, "#FFFFFF", hiBoost * 0.5));
+    grd.addColorStop(1, COL.goldSh);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // subtle outline
+    ctx.strokeStyle = COL.goldSh;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+
+  // Shimmer sweep effect
+  if (state.shimmer > 0) {
+    ctx.globalAlpha = state.shimmer * 0.4;
+    for (let i = 0; i < 6; i++) {
+      if (i === 5) continue;
+      const i2 = (i + 1) % 6;
+      ctx.beginPath();
+      ctx.moveTo(outerPts[i].x, outerPts[i].y);
+      ctx.lineTo(outerPts[i2].x, outerPts[i2].y);
+      ctx.lineTo(innerPts[i2].x, innerPts[i2].y);
+      ctx.lineTo(innerPts[i].x, innerPts[i].y);
+      ctx.closePath();
+      ctx.fillStyle = COL.goldHi;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+// ── Color Utilities ────────────────────────────────────────────
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
+function rgbToHex(r, g, b) {
+  return "#" + ((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
+
+function lerpColor(c1, c2, t) {
+  t = Math.max(0, Math.min(1, t));
+  const a = hexToRgb(c1), b = hexToRgb(c2);
+  return rgbToHex(
+    Math.round(a[0]+(b[0]-a[0])*t),
+    Math.round(a[1]+(b[1]-a[1])*t),
+    Math.round(a[2]+(b[2]-a[2])*t)
+  );
+}
+
+// ── Background ─────────────────────────────────────────────────
+function drawBackground(ctx) {
+  const grd = ctx.createRadialGradient(CX, CY, 50, CX, CY, 500);
+  grd.addColorStop(0, COL.bgMid);
+  grd.addColorStop(1, COL.bgDeep);
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  // Extra vignette at high intensity
+  if (state.vignette > 0) {
+    const vg = ctx.createRadialGradient(CX, CY, 100, CX, CY, 450);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, `rgba(0,0,0,${state.vignette * 0.3})`);
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Specks
+  for (const s of specks) {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(200,200,220,${s.a})`;
+    ctx.fill();
+  }
+}
+
+// ── Board Rendering ────────────────────────────────────────────
+function drawBoard(ctx, now) {
+  const zoom = state.cameraZoom;
+  ctx.save();
+  ctx.translate(CX, CY);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-CX, -CY);
+
+  // Draw slots
+  for (let i = 0; i < 21; i++) {
+    const slot = SLOTS[i];
+    const sa = state.slotAnim[i];
+    const sx = CX + slot.x + sa.shakeX;
+    const sy = CY + slot.y;
+
+    // Slot cavity
+    drawTriPath(ctx, sx, sy, S, slot.ori);
+    ctx.fillStyle = "#1A1F28";
+    ctx.fill();
+
+    // Hover tint
+    if (sa.hoverTint > 0 && state.selectedPiece) {
+      drawTriPath(ctx, sx, sy, S, slot.ori);
+      const tintCol = state.currentPlayer === 0 ? "rgba(242,242,242," : "rgba(18,18,18,";
+      ctx.fillStyle = tintCol + (sa.hoverTint * 0.12) + ")";
+      ctx.fill();
+    }
+
+    // Outline
+    drawTriPath(ctx, sx, sy, S, slot.ori);
+    const outlineBase = lerpColor(COL.slotOutline, "#AABBCC", state.outlineBrighten);
+    if (sa.outlineFlash > 0) {
+      ctx.strokeStyle = lerpColor(outlineBase, COL.denied, sa.outlineFlash);
+      ctx.lineWidth = 2;
+    } else {
+      ctx.strokeStyle = outlineBase;
+      ctx.lineWidth = 1;
+    }
+    ctx.stroke();
+
+    // Golden slot
+    if (state.goldenSlot === i) {
+      drawBevelTri(ctx, sx, sy, PIECE_S, slot.ori,
+        COL.goldenBright, "#FFF5C0", COL.goldBase, COL.goldSh, null, sa.scale);
+      // Gold star symbol
+      ctx.save();
+      ctx.font = "bold 24px sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const off = slot.ori === "up" ? 4 : -4;
+      ctx.fillStyle = COL.goldSh;
+      ctx.fillText("★", sx, sy + off);
+      ctx.restore();
+    }
+    // Placed piece
+    else if (state.board[i]) {
+      const piece = state.board[i];
+      const isWhite = piece.owner === 0;
+      const bc = isWhite ? COL.white : COL.black;
+      const hc = isWhite ? "#FFFFFF" : COL.blackHi;
+      const sc = isWhite ? COL.whiteSh : "#000000";
+      const lc = isWhite ? COL.black : COL.white;
+
+      // Glow for adjacent scoring highlight
+      if (sa.glow > 0) {
+        drawTriPath(ctx, sx, sy, PIECE_S + 8, slot.ori);
+        const glowCol = isWhite ? `rgba(242,242,242,${sa.glow*0.5})` : `rgba(100,100,100,${sa.glow*0.5})`;
+        ctx.fillStyle = glowCol;
+        ctx.fill();
+      }
+
+      drawBevelTri(ctx, sx, sy, PIECE_S, slot.ori, bc, hc, sc, lc, piece.value, sa.scale);
+    }
+  }
+
+  // Float labels
+  for (const fl of state.floatLabels) {
+    if (fl.alpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = fl.alpha;
+      ctx.font = "bold 22px sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = fl.color;
+      ctx.fillText(fl.text, CX + fl.x, CY + fl.y + fl.offsetY);
+      ctx.restore();
+    }
+  }
+
+  ctx.restore();
+}
+
+// ── Tray Rendering ─────────────────────────────────────────────
+function drawTrays(ctx, now) {
+  const zoom = state.cameraZoom;
+  ctx.save();
+  ctx.translate(CX, CY);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-CX, -CY);
+
+  for (let owner = 0; owner < 2; owner++) {
+    const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+    for (let i = 0; i < 10; i++) {
+      const p = pieces[i];
+      if (p.used) continue;
+
+      const pos = trayPiecePos(owner, i);
+      const tIdx = owner * 10 + i;
+
+      // Idle breathing
+      const breathe = 1 + 0.02 * Math.sin(now / 1200 + i * 0.7);
+      let sc = breathe;
+
+      // Selection state
+      const isSelected = state.selectedPiece &&
+        state.selectedPiece.owner === owner &&
+        state.selectedPiece.value === p.value;
+
+      if (isSelected) {
+        sc = 1.05; // armed scale
+      }
+
+      const isWhite = owner === 0;
+      const bc = isWhite ? COL.white : COL.black;
+      const hc = isWhite ? "#FFFFFF" : COL.blackHi;
+      const shc = isWhite ? COL.whiteSh : "#000000";
+      const lc = isWhite ? COL.black : COL.white;
+
+      // Blue glow if selected
+      if (isSelected) {
+        drawTriPath(ctx, pos.x, pos.y, TRAY_PIECE_S + 6, "down");
+        ctx.strokeStyle = COL.accent;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = COL.accent;
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      drawBevelTri(ctx, pos.x, pos.y, TRAY_PIECE_S, "down", bc, hc, shc, lc, p.value, sc);
+    }
+
+    // Tray label
+    const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
+    const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const isActive = state.currentPlayer === owner && state.phase === "playing";
+    ctx.fillStyle = isActive ? COL.accent : (owner === 0 ? "#AAA" : "#666");
+    ctx.fillText(owner === 0 ? "WHITE" : "BLACK", lx, ly - 55);
+  }
+
+  ctx.restore();
+}
+
+// ── HUD ────────────────────────────────────────────────────────
+function drawHUD(ctx, now) {
+  if (state.phase !== "playing" && state.phase !== "paused" && state.phase !== "menuTransition") return;
+
+  // Turn indicator
+  const playerName = state.currentPlayer === 0 ? "White" : "Black";
+  const pulseA = 0.6 + 0.4 * Math.sin(now / 400);
+
+  ctx.save();
+  ctx.font = "bold 20px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillStyle = COL.accent;
+  ctx.globalAlpha = pulseA;
+  ctx.fillText(`${playerName} to place`, CX, 16);
+  ctx.globalAlpha = 1;
+
+  // Round indicator
+  ctx.font = "16px sans-serif";
+  ctx.fillStyle = "#AAB";
+  ctx.fillText(`Round ${state.round}/2`, CX, 42);
+
+  // Scores
+  ctx.font = "bold 15px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillStyle = COL.white;
+  ctx.fillText(`White: ${state.scores[0]}`, 20, 16);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#999";
+  ctx.fillText(`Black: ${state.scores[1]}`, W - 20, 16);
+
+  // Controls hint
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#667";
+  ctx.fillText("Tap piece → tap slot  |  P: Pause  |  R: Restart", CX, H - 16);
+
+  ctx.restore();
+}
+
+// ── Toasts ─────────────────────────────────────────────────────
+function addToast(text) {
+  state.toasts.push({text, timer: 0, dur: 900});
+}
+
+function drawToasts(ctx, dt) {
+  for (let i = state.toasts.length - 1; i >= 0; i--) {
+    const t = state.toasts[i];
+    t.timer += dt;
+    if (t.timer >= t.dur) { state.toasts.splice(i, 1); continue; }
+    const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.font = "bold 18px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = COL.goldenBright;
+    ctx.fillText(t.text, CX, H - 60);
+    ctx.restore();
+  }
+}
+
+// ── Overlays ───────────────────────────────────────────────────
+function drawMenu(ctx) {
+  if (state.phase !== "menu" && state.phase !== "menuTransition") return;
+  ctx.save();
+  ctx.globalAlpha = state.menuAlpha;
+  const slideY = state.menuSlide;
+
+  // Dim
+  ctx.fillStyle = "rgba(10,14,20,0.75)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.font = "bold 48px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = COL.goldBase;
+  ctx.fillText("Golden Triangle", CX, 130 + slideY);
+
+  // Rules
+  ctx.font = "16px sans-serif";
+  ctx.fillStyle = "#CCD";
+  const rules = [
+    "Alternate placing numbered triangles (1-10).",
+    "After the last placement, the final empty slot becomes Gold.",
+    "Adjacent numbers score for their owners. Two rounds to win!"
+  ];
+  for (let i = 0; i < rules.length; i++) {
+    ctx.fillText(rules[i], CX, 200 + i * 26 + slideY);
+  }
+
+  // Controls
+  ctx.font = "14px sans-serif";
+  ctx.fillStyle = "#889";
+  ctx.fillText("Click/tap piece to select, then click/tap slot to place", CX, 310 + slideY);
+  ctx.fillText("P / Escape: Pause   |   R: Restart", CX, 334 + slideY);
+
+  // Start prompt
+  const blink = Math.sin(performance.now() / 500) > 0 ? 1 : 0.5;
+  ctx.globalAlpha = state.menuAlpha * blink;
+  ctx.font = "bold 22px sans-serif";
+  ctx.fillStyle = COL.accent;
+  ctx.fillText("Press Space / Enter / Click to Start", CX, 410 + slideY);
+
+  ctx.restore();
+}
+
+function drawPause(ctx) {
+  if (state.phase !== "paused") return;
+  ctx.save();
+  ctx.fillStyle = "rgba(10,14,20,0.6)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.font = "bold 40px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#DDE";
+  ctx.fillText("Paused", CX, CY - 20);
+  ctx.font = "16px sans-serif";
+  ctx.fillStyle = "#889";
+  ctx.fillText("P / Escape to resume  |  R to restart", CX, CY + 30);
+  ctx.restore();
+}
+
+function drawRoundResult(ctx) {
+  if (state.phase !== "roundResult") return;
+  ctx.save();
+  const sc = state.resultScale;
+
+  // Dim backdrop
+  ctx.fillStyle = "rgba(10,14,20,0.5)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Panel
+  ctx.translate(CX, CY);
+  ctx.scale(sc, sc);
+  ctx.translate(-CX, -CY);
+
+  const pw = 360, ph = 240;
+  const px = CX - pw/2, py = CY - ph/2;
+
+  ctx.fillStyle = "rgba(30,36,48,0.95)";
+  ctx.strokeStyle = COL.goldBase;
+  ctx.lineWidth = 2;
+  roundRect(ctx, px, py, pw, ph, 12);
+  ctx.fill(); ctx.stroke();
+
+  ctx.font = "bold 24px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = COL.goldenBright;
+  ctx.fillText(`Round ${state.round} Results`, CX, py + 35);
+
+  ctx.font = "bold 30px sans-serif";
+  ctx.fillStyle = COL.white;
+  ctx.fillText(`White: ${state.roundScores[0]}`, CX, py + ph/2 - 15);
+  ctx.fillStyle = "#AAA";
+  ctx.fillText(`Black: ${state.roundScores[1]}`, CX, py + ph/2 + 25);
+
+  // Continue prompt
+  const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
+  ctx.globalAlpha = blink;
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillStyle = COL.accent;
+  const contText = state.round < 2 ? "Space / Enter / Click: Next Round" : "Space / Enter / Click: View Winner";
+  ctx.fillText(contText, CX, py + ph - 30);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+function drawGameOver(ctx) {
+  if (state.phase !== "gameOver") return;
+  ctx.save();
+
+  ctx.fillStyle = "rgba(10,14,20,0.7)";
+  ctx.fillRect(0, 0, W, H);
+
+  const pw = 360, ph = 240;
+  const px = CX - pw/2, py = CY - ph/2;
+
+  ctx.fillStyle = "rgba(30,36,48,0.95)";
+  ctx.strokeStyle = COL.goldBase;
+  ctx.lineWidth = 2;
+  roundRect(ctx, px, py, pw, ph, 12);
+  ctx.fill(); ctx.stroke();
+
+  // Winner heading
+  let winner;
+  if (state.scores[0] > state.scores[1]) winner = "White Wins!";
+  else if (state.scores[1] > state.scores[0]) winner = "Black Wins!";
+  else winner = "Draw!";
+
+  ctx.font = "bold 24px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = COL.goldenBright;
+  ctx.fillText(winner, CX, py + 35);
+
+  // Final scores large and centered
+  ctx.font = "bold 30px sans-serif";
+  ctx.fillStyle = COL.white;
+  ctx.fillText(`White: ${state.scores[0]}`, CX, py + ph/2 - 15);
+  ctx.fillStyle = "#AAA";
+  ctx.fillText(`Black: ${state.scores[1]}`, CX, py + ph/2 + 25);
+
+  // Continue
+  const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
+  ctx.globalAlpha = blink;
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillStyle = COL.accent;
+  ctx.fillText("Space / Enter / Click to Play Again", CX, py + ph - 25);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h);
+  ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
+// ── Gold Flash Overlay ─────────────────────────────────────────
+function drawGoldFlash(ctx) {
+  if (state.goldFlash > 0) {
+    ctx.save();
+    ctx.fillStyle = `rgba(245,217,107,${state.goldFlash * 0.18})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+}
+
+// ── Game Logic ─────────────────────────────────────────────────
+function startMatch() {
+  const oldPhase = state.phase;
+  state = freshState();
+  state.firstPlayer = Math.random() < 0.5 ? 0 : 1;
+  state.currentPlayer = state.firstPlayer;
+  state.round = 1;
+  tweens = [];
+
+  if (oldPhase === "menu") {
+    // Menu → Playing transition: 220ms fade + 12px upward slide
+    state.phase = "menuTransition";
+    state.menuAlpha = 1;
+    state.menuSlide = 0;
+    addTween(state, "menuAlpha", 1, 0, 220, easeOut, () => {
+      state.phase = "playing";
+    }, "menuFade");
+    addTween(state, "menuSlide", 0, -12, 220, easeOut, null, "menuSlide");
+  } else {
+    state.phase = "playing";
+  }
+}
+
+function startRound() {
+  state.board = new Array(21).fill(null);
+  state.whitePieces = Array.from({length:10},(_,i)=>({value:i+1, used:false}));
+  state.blackPieces = Array.from({length:10},(_,i)=>({value:i+1, used:false}));
+  state.selectedPiece = null;
+  state.turnCount = 0;
+  state.goldenSlot = -1;
+  state.roundScores = [0, 0];
+  state.slotAnim = Array.from({length:21}, ()=>({scale:1, shakeX:0, outlineFlash:0, glow:0, hoverTint:0}));
+  state.floatLabels = [];
+  state.revealStep = -1;
+  state.intensityLevel = 0;
+  state.outlineBrighten = 0;
+  state.vignette = 0;
+  state.gframeGlow = 0;
+  state.cameraZoom = 1;
+  state.goldFlash = 0;
+  state.resultScale = 0;
+  state.phase = "playing";
+  // Swap starting player for round 2
+  if (state.round === 2) {
+    state.currentPlayer = 1 - state.firstPlayer;
+  } else {
+    state.currentPlayer = state.firstPlayer;
+  }
+  killTweens("placement");
+  killTweens("shake");
+  killTweens("reveal");
+}
+
+function placePiece(slotId) {
+  if (state.phase !== "playing") return false;
+  if (!state.selectedPiece) return false;
+  if (state.board[slotId] != null) return false;
+
+  const piece = state.selectedPiece;
+  state.board[slotId] = {owner: piece.owner, value: piece.value};
+
+  // Mark piece used
+  const pieces = piece.owner === 0 ? state.whitePieces : state.blackPieces;
+  const p = pieces.find(pp => pp.value === piece.value);
+  if (p) p.used = true;
+
+  state.selectedPiece = null;
+  state.turnCount++;
+
+  // Acrylic click sound
+  playPlaceClick();
+
+  // Placement pop animation
+  const sa = state.slotAnim[slotId];
+  addTween(sa, "scale", 0.85, 1.12, 70, easeOut, () => {
+    addTween(sa, "scale", 1.12, 1.0, 70, easeInOut, null, "placement");
+  }, "placement");
+
+  // Check progressive intensity milestones
+  updateIntensity();
+
+  // Check milestone toasts (remaining empty slots after this placement)
+  const remaining = 21 - state.turnCount;
+  if ([10, 5, 3, 2].includes(remaining)) {
+    addToast(`${remaining} slot${remaining > 1 ? "s" : ""} left`);
+    // Shimmer sweep
+    addTween(state, "shimmer", 1, 0, 250, easeOut, null, "shimmer");
+  }
+
+  // 20th placement - end of round
+  if (state.turnCount === 20) {
+    // Zoom pulse
+    addTween(state, "cameraZoom", 1.0, 1.03, 110, easeOut, () => {
+      addTween(state, "cameraZoom", 1.03, 1.0, 110, easeInOut, null, "zoom");
+    }, "zoom");
+
+    // Gold flash
+    addTween(state, "goldFlash", 1, 0, 160, easeOut, null, "flash");
+
+    // Find empty slot and start reveal
+    setTimeout(() => {
+      if (state.phase !== "playing") return;
+      beginReveal();
+    }, 300);
+
+    return true;
+  }
+
+  // Swap turn
+  state.currentPlayer = 1 - state.currentPlayer;
+  return true;
+}
+
+function updateIntensity() {
+  const tc = state.turnCount;
+  if (tc >= 18) {
+    state.outlineBrighten = 1;
+    state.vignette = 1;
+    state.gframeGlow = 1;
+  } else if (tc >= 15) {
+    state.outlineBrighten = 1;
+    state.vignette = 1;
+    state.gframeGlow = 0;
+  } else if (tc >= 10) {
+    state.outlineBrighten = 1;
+    state.vignette = 0;
+    state.gframeGlow = 0;
+  }
+}
+
+function beginReveal() {
+  // Find the golden slot
+  let emptySlot = -1;
+  for (let i = 0; i < 21; i++) {
+    if (state.board[i] == null) { emptySlot = i; break; }
+  }
+  state.goldenSlot = emptySlot;
+
+  // Calculate scores
+  const adj = ADJ[emptySlot];
+  state.roundScores = [0, 0];
+  const scoringPieces = [];
+  for (const a of adj) {
+    if (state.board[a]) {
+      const piece = state.board[a];
+      state.roundScores[piece.owner] += piece.value;
+      scoringPieces.push({slot: a, owner: piece.owner, value: piece.value});
+    }
+  }
+
+  // Reveal sequence (~900ms total)
+  // Step 1: Golden triangle pop (0-200ms)
+  const sa = state.slotAnim[emptySlot];
+  addTween(sa, "scale", 0.5, 1.12, 100, easeOut, () => {
+    addTween(sa, "scale", 1.12, 1.0, 100, easeInOut, null, "reveal");
+  }, "reveal");
+
+  // Step 2: Adjacent triangles glow one-by-one (160ms each, starting at 200ms)
+  scoringPieces.forEach((sp, idx) => {
+    setTimeout(() => {
+      if (state.phase !== "playing" && state.phase !== "roundResult") return;
+      const sAnim = state.slotAnim[sp.slot];
+      addTween(sAnim, "glow", 0, 1, 160, easeOut, null, "glow" + sp.slot);
+    }, 200 + idx * 160);
+  });
+
+  // Step 3: Floating +N labels (at 200 + scoringPieces.length * 160)
+  const labelStart = 200 + scoringPieces.length * 160;
+  scoringPieces.forEach((sp) => {
+    setTimeout(() => {
+      if (state.phase !== "playing" && state.phase !== "roundResult") return;
+      const slot = SLOTS[sp.slot];
+      const col = sp.owner === 0 ? COL.white : "#AAA";
+      state.floatLabels.push({
+        x: slot.x, y: slot.y,
+        text: `+${sp.value}`,
+        color: col,
+        offsetY: 0,
+        alpha: 1,
+        timer: 0,
+        dur: 350
+      });
+    }, labelStart);
+  });
+
+  // Step 4: Show round result (at ~900ms)
+  setTimeout(() => {
+    if (state.phase !== "playing") return;
+    state.scores[0] += state.roundScores[0];
+    state.scores[1] += state.roundScores[1];
+    state.phase = "roundResult";
+    addTween(state, "resultScale", 0.96, 1.0, 180, easeOut, null, "result");
+  }, 900);
+}
+
+function advanceFromRoundResult() {
+  if (state.round < 2) {
+    state.round = 2;
+    startRound();
+  } else {
+    state.phase = "gameOver";
+    // Check best margin
+    const margin = Math.abs(state.scores[0] - state.scores[1]);
+    let bestMargin = 0;
+    try { bestMargin = parseInt(localStorage.getItem("goldenTriangle_bestMargin")) || 0; } catch(e) {}
+    if (margin > bestMargin && margin > 0) {
+      try { localStorage.setItem("goldenTriangle_bestMargin", String(margin)); } catch(e) {}
+    }
+  }
+}
+
+// ── Float Label Update ─────────────────────────────────────────
+function updateFloatLabels(dt) {
+  for (let i = state.floatLabels.length - 1; i >= 0; i--) {
+    const fl = state.floatLabels[i];
+    fl.timer += dt * 1000;
+    const p = Math.min(fl.timer / fl.dur, 1);
+    fl.offsetY = -18 * p;
+    fl.alpha = 1 - p;
+    if (p >= 1) state.floatLabels.splice(i, 1);
+  }
+}
+
+// ── Input Handling ─────────────────────────────────────────────
+let hoveredSlot = -1;
+
+function handleClick(canvasX, canvasY) {
+  // Menu
+  if (state.phase === "menu" || state.phase === "menuTransition") {
+    if (state.phase === "menu") startMatch();
+    return;
+  }
+
+  // Paused - ignore
+  if (state.phase === "paused") return;
+
+  // Round result
+  if (state.phase === "roundResult") {
+    advanceFromRoundResult();
+    return;
+  }
+
+  // Game over
+  if (state.phase === "gameOver") {
+    startMatch();
+    return;
+  }
+
+  // Playing
+  if (state.phase !== "playing") return;
+
+  // Account for camera zoom
+  const zoom = state.cameraZoom;
+  const adjX = CX + (canvasX - CX) / zoom;
+  const adjY = CY + (canvasY - CY) / zoom;
+
+  // Check tray clicks first
+  for (let owner = 0; owner < 2; owner++) {
+    const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+    for (let i = 0; i < 10; i++) {
+      if (pieces[i].used) continue;
+      const pos = trayPiecePos(owner, i);
+      // Use zoom-adjusted coordinates for tray too
+      const tpx = CX + (pos.x - CX);
+      const tpy = CY + (pos.y - CY);
+
+      if (pointInTriPadded(adjX, adjY, tpx, tpy, TRAY_PIECE_S, "down", 8)) {
+        // Can only select own pieces
+        if (owner !== state.currentPlayer) {
+          // Denied feedback - but subtle, just ignore
+          return;
+        }
+        // Toggle selection
+        if (state.selectedPiece && state.selectedPiece.value === pieces[i].value && state.selectedPiece.owner === owner) {
+          state.selectedPiece = null;
+        } else {
+          state.selectedPiece = {owner, value: pieces[i].value};
+        }
+        return;
+      }
+    }
+  }
+
+  // Check board slot clicks
+  for (let i = 0; i < 21; i++) {
+    const slot = SLOTS[i];
+    const sx = CX + slot.x;
+    const sy = CY + slot.y;
+
+    // Two-pass: exact then padded
+    let hit = pointInTri(adjX, adjY, triVerts(sx, sy, S, slot.ori));
+    if (!hit) hit = pointInTriPadded(adjX, adjY, sx, sy, S, slot.ori, 6);
+
+    if (hit) {
+      // Try to place
+      if (state.board[i] != null) {
+        // Occupied - denied shake
+        denySlot(i);
+        return;
+      }
+      if (!state.selectedPiece) {
+        // No piece selected - denied
+        denySlot(i);
+        return;
+      }
+      const success = placePiece(i);
+      if (!success) denySlot(i);
+      return;
+    }
+  }
+}
+
+function denySlot(slotId) {
+  const sa = state.slotAnim[slotId];
+  // Micro-shake
+  const shakeDur = 120;
+  const startTime = performance.now();
+  killTweens("shake" + slotId);
+
+  const shakeT = {
+    obj: null, prop: null, from: 0, to: 0, dur: shakeDur, elapsed: 0,
+    ease: linear,
+    onDone: () => { sa.shakeX = 0; sa.outlineFlash = 0; },
+    tag: "shake" + slotId, done: false
+  };
+  // Custom tick via the update loop
+  shakeT._custom = true;
+  shakeT._sa = sa;
+  shakeT._startTime = startTime;
+  tweens.push(shakeT);
+
+  sa.outlineFlash = 0.7;
+}
+
+// Custom update for shake tweens
+function updateShakeTweens(now) {
+  for (const t of tweens) {
+    if (!t._custom) continue;
+    const elapsed = now - t._startTime;
+    if (elapsed < t.dur) {
+      const p = elapsed / t.dur;
+      t._sa.shakeX = 6 * Math.sin(p * Math.PI * 4) * (1 - p);
+      t._sa.outlineFlash = 0.7 * (1 - p);
+    }
+  }
+}
+
+function handleMouseMove(canvasX, canvasY) {
+  if (state.phase !== "playing") { hoveredSlot = -1; return; }
+
+  const zoom = state.cameraZoom;
+  const adjX = CX + (canvasX - CX) / zoom;
+  const adjY = CY + (canvasY - CY) / zoom;
+
+  let newHover = -1;
+  for (let i = 0; i < 21; i++) {
+    const slot = SLOTS[i];
+    const sx = CX + slot.x, sy = CY + slot.y;
+    if (pointInTriPadded(adjX, adjY, sx, sy, S, slot.ori, 6)) {
+      if (state.board[i] == null) newHover = i;
+      break;
+    }
+  }
+
+  // Fade off previous hover
+  if (hoveredSlot >= 0 && hoveredSlot !== newHover) {
+    const sa = state.slotAnim[hoveredSlot];
+    addTween(sa, "hoverTint", sa.hoverTint, 0, 80, easeOut, null, "hover" + hoveredSlot);
+  }
+
+  // Instant on for new hover
+  if (newHover >= 0 && newHover !== hoveredSlot) {
+    state.slotAnim[newHover].hoverTint = 1;
+    killTweens("hover" + newHover);
+  }
+
+  hoveredSlot = newHover;
+}
+
+// Mouse/touch events
+canvas.addEventListener("click", (e) => {
+  const pos = screenToCanvas(e.clientX, e.clientY);
+  handleClick(pos.x, pos.y);
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  const pos = screenToCanvas(e.clientX, e.clientY);
+  handleMouseMove(pos.x, pos.y);
+});
+
+canvas.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    const pos = screenToCanvas(e.touches[0].clientX, e.touches[0].clientY);
+    handleClick(pos.x, pos.y);
+  }
+}, {passive: false});
+
+// Keyboard
+document.addEventListener("keydown", (e) => {
+  const key = e.key;
+
+  if (key === " " || key === "Enter") {
+    e.preventDefault();
+    if (state.phase === "menu" || state.phase === "menuTransition") startMatch();
+    else if (state.phase === "roundResult") advanceFromRoundResult();
+    else if (state.phase === "gameOver") startMatch();
+  }
+
+  if (key === "r" || key === "R") {
+    if (["menu","menuTransition","playing","paused","gameOver","roundResult"].includes(state.phase)) {
+      state = freshState();
+      tweens = [];
+      state.phase = "menu";
+    }
+  }
+
+  if (key === "p" || key === "P" || key === "Escape") {
+    if (state.phase === "playing") {
+      state.phase = "paused";
+    } else if (state.phase === "paused") {
+      state.phase = "playing";
+    }
+  }
+});
+
+// ── Main Loop ──────────────────────────────────────────────────
+function frame(now) {
+  const dt = Math.min((now - prevTime) / 1000, 0.05);
+  prevTime = now;
+
+  if (state.phase !== "paused") {
+    updateTweens(dt * 1000);
+    updateShakeTweens(now);
+    updateSpecks(dt);
+    updateFloatLabels(dt);
+  }
+
+  // Clear at native resolution, then set logical coordinate transform
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(gDPR, 0, 0, gDPR, 0, 0);
+
+  // 1. Background
+  drawBackground(ctx);
+
+  // 2. Board
+  drawBoard(ctx, now);
+
+  // 3. G-frame (drawn on top to cleanly frame the board)
+  drawGFrame(ctx, now);
+
+  // 4. Trays
+  drawTrays(ctx, now);
+
+  // 5. UI overlays
+  drawHUD(ctx, now);
+  drawMenu(ctx);
+  drawPause(ctx);
+  drawRoundResult(ctx);
+  drawGameOver(ctx);
+
+  // 6. Effects
+  drawGoldFlash(ctx);
+  drawToasts(ctx, dt * 1000);
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
