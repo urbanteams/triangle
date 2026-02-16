@@ -345,9 +345,10 @@ const Net = {
       }
     });
 
-    // Listen for opponent disconnect
+    // Listen for opponent disconnect (only during active game)
     this.listen(this.roomRef.child(`players/${1 - this.myIndex}`), 'value', (snapshot) => {
-      if (snapshot.val() === null && state.phase !== "menu" && state.phase !== "lobby") {
+      const isInGame = state.phase === "playing" || state.phase === "roundResult" || state.phase === "waitingAdvance" || state.phase === "gameOver";
+      if (snapshot.val() === null && isInGame) {
         state.phase = "disconnected";
         state.disconnectTimer = 3000;
       }
@@ -498,7 +499,9 @@ function freshState() {
     hoverHowTo: false,
     howToExpanded: false,
     hoverRegular: false,
-    hoverHidden: false
+    hoverHidden: false,
+    hoverStartJoin: false,
+    hoverBackJoin: false
   };
 }
 
@@ -1017,6 +1020,8 @@ const BTN_BACK = { x: CX - 80, y: 365, w: 160, h: 40, r: 8 };
 const BTN_HOWTO = { x: CX - 80, y: 425, w: 160, h: 30, r: 6 };
 const BTN_REGULAR = { x: CX - 140, y: 200, w: 280, h: 80, r: 10 };
 const BTN_HIDDEN = { x: CX - 140, y: 300, w: 280, h: 80, r: 10 };
+const BTN_START_JOIN = { x: CX - 90, y: 365, w: 80, h: 40, r: 8 };
+const BTN_BACK_JOIN = { x: CX + 10, y: 365, w: 80, h: 40, r: 8 };
 
 function drawLobby(c, now) {
   if (state.phase !== "lobby" && state.phase !== "waiting" && state.phase !== "joining") return;
@@ -1169,27 +1174,35 @@ function drawLobby(c, now) {
       }
     }
 
-    // Instructions
-    c.font = "16px sans-serif";
-    c.fillStyle = "#889";
-    c.fillText("Type 4-character code, then press Enter", CX, 340);
-
     // Error
     if (state.lobbyError) {
       c.font = "bold 16px sans-serif";
       c.fillStyle = COL.denied;
-      c.fillText(state.lobbyError, CX, 370);
+      c.fillText(state.lobbyError, CX, 340);
     }
 
+    // Start button (enabled when code is 4 characters)
+    const canStart = state.joinCode.length === 4;
+    const bStart = BTN_START_JOIN;
+    roundRect(c, bStart.x, bStart.y, bStart.w, bStart.h, bStart.r);
+    c.fillStyle = canStart ? (state.hoverStartJoin ? "#3A5A4A" : "#2A4A3A") : "#1A1A1A";
+    c.fill();
+    c.strokeStyle = canStart ? (state.hoverStartJoin ? COL.accent : "#667") : "#333";
+    c.lineWidth = canStart ? 2 : 1;
+    c.stroke();
+    c.font = "bold 16px sans-serif";
+    c.fillStyle = canStart ? COL.accent : "#555";
+    c.fillText("Start", bStart.x + bStart.w/2, bStart.y + bStart.h/2);
+
     // Back button
-    const bb = BTN_BACK;
-    roundRect(c, bb.x, bb.y, bb.w, bb.h, bb.r);
-    c.fillStyle = state.hoverBack ? "#3A3A3A" : "#2A2A2A";
+    const bBack = BTN_BACK_JOIN;
+    roundRect(c, bBack.x, bBack.y, bBack.w, bBack.h, bBack.r);
+    c.fillStyle = state.hoverBackJoin ? "#3A3A3A" : "#2A2A2A";
     c.fill();
     c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
     c.font = "16px sans-serif";
     c.fillStyle = "#AAB";
-    c.fillText("Back", CX, bb.y + bb.h/2);
+    c.fillText("Back", bBack.x + bBack.w/2, bBack.y + bBack.h/2);
   }
 
   c.restore();
@@ -1459,9 +1472,15 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
-  // Joining (back button)
+  // Joining (start and back buttons)
   if (state.phase === "joining") {
-    if (pointInRect(canvasX, canvasY, BTN_BACK)) {
+    if (pointInRect(canvasX, canvasY, BTN_START_JOIN)) {
+      if (state.joinCode.length === 4) {
+        Net.joinRoom(state.joinCode);
+      }
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, BTN_BACK_JOIN)) {
       state.phase = "lobby";
       state.joinCode = "";
       state.lobbyError = "";
@@ -1583,8 +1602,13 @@ function handleMouseMove(canvasX, canvasY) {
     state.hoverHowTo = pointInRect(canvasX, canvasY, BTN_HOWTO);
     return;
   }
-  if (state.phase === "waiting" || state.phase === "joining") {
+  if (state.phase === "waiting") {
     state.hoverBack = pointInRect(canvasX, canvasY, BTN_BACK);
+    return;
+  }
+  if (state.phase === "joining") {
+    state.hoverStartJoin = pointInRect(canvasX, canvasY, BTN_START_JOIN);
+    state.hoverBackJoin = pointInRect(canvasX, canvasY, BTN_BACK_JOIN);
     return;
   }
   if (state.phase === "modeSelection") {
@@ -1662,12 +1686,7 @@ document.addEventListener("keydown", (e) => {
       state.lobbyError = "";
       return;
     }
-    if (key === "Enter") {
-      if (state.joinCode.length === 4) {
-        Net.joinRoom(state.joinCode);
-      }
-      return;
-    }
+    // Enter key removed - use Start button instead
     // Accept alphanumeric chars
     if (key.length === 1 && /[A-Za-z0-9]/.test(key) && state.joinCode.length < 4) {
       state.joinCode += key.toUpperCase();
