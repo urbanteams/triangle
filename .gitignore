@@ -1,2 +1,14 @@
-*.png
-*.PNG
+# Node modules
+node_modules/
+server/node_modules/
+
+# npm
+npm-debug.log
+package-lock.json
+
+# Local settings
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db

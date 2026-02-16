@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Golden Triangle - Online</title>
+<link href="https://fonts.googleapis.com/css2?family=Federo&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;user-select:none;-webkit-user-select:none}
+canvas{display:block;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+// ── Constants ──────────────────────────────────────────────────
+const W = 960, H = 540;
+const CX = 480, CY = 270;
+const S = 66;
+const TH = S * 0.8660254;
+const PIECE_S = 62;
+
+const COL = {
+  bgDeep: "#1B202A", bgMid: "#2B3340",
+  goldBase: "#C9A24A", goldHi: "#E7D08A", goldSh: "#8A6A22",
+  white: "#F2F2F2", whiteSh: "#CFCFCF",
+  black: "#121212", blackHi: "#3A3A3A",
+  slotOutline: "#6F7A89",
+  accent: "#62B6FF",
+  denied: "#FF5A6A",
+  goldenBright: "#F5D96B"
+};
+
+// ── Audio ─────────────────────────────────────────────────────
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+function playPlaceClick() {
+  ensureAudio();
+  const ctx = audioCtx, now = ctx.currentTime;
+  const master = ctx.createGain();
+  master.gain.value = 0.055;
+  master.connect(ctx.destination);
+  const noiseDur = 0.012;
+  const noiseLen = Math.ceil(ctx.sampleRate * noiseDur);
+  const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+  const noiseData = noiseBuf.getChannelData(0);
+  for (let i = 0; i < noiseLen; i++) noiseData[i] = (Math.random() * 2 - 1) * (1 - i / noiseLen);
+  const noiseSrc = ctx.createBufferSource();
+  noiseSrc.buffer = noiseBuf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass"; bp.frequency.value = 1800; bp.Q.value = 0.8;
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.9, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + noiseDur);
+  noiseSrc.connect(bp); bp.connect(noiseGain); noiseGain.connect(master);
+  noiseSrc.start(now); noiseSrc.stop(now + noiseDur);
+  const osc = ctx.createOscillator();
+  osc.type = "sine"; osc.frequency.value = 1600;
+  const oscGain = ctx.createGain();
+  oscGain.gain.setValueAtTime(0.12, now);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
+  osc.connect(oscGain); oscGain.connect(master);
+  osc.start(now); osc.stop(now + 0.022);
+}
+
+// ── Slot Definitions ───────────────────────────────────────────
+const T3 = TH / 3;
+const T23 = 2*TH / 3;
+const HS = S / 2;
+
+const SLOTS = [
+  {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
+  {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
+  {id:2,  x:  0,   y:-4*T3, ori:"up"},
+  {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
+  {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
+  {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
+  {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
+  {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
+  {id:8,  x:  0,   y:-2*T3, ori:"down"},
+  {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
+  {id:10, x: 2*HS, y:-2*T3, ori:"down"},
+  {id:11, x: 3*HS, y:-1*T3, ori:"up"},
+  {id:12, x:-3*HS, y: 1*T3, ori:"down"},
+  {id:13, x:-2*HS, y: 2*T3, ori:"up"},
+  {id:14, x:-1*HS, y: 1*T3, ori:"down"},
+  {id:15, x:  0,   y: 2*T3, ori:"up"},
+  {id:16, x:-2*HS, y: 4*T3, ori:"down"},
+  {id:17, x:-1*HS, y: 5*T3, ori:"up"},
+  {id:18, x:  0,   y: 4*T3, ori:"down"},
+  {id:19, x: 1*HS, y: 5*T3, ori:"up"},
+  {id:20, x: 2*HS, y: 4*T3, ori:"down"}
+];
+
+const ADJ = [
+  [1, 6],       [0, 2],       [1, 3, 8],    [2, 4],       [3, 10],
+  [6, 12],      [0, 5, 7],    [6, 8, 14],   [2, 7, 9],    [8, 10],
+  [4, 9, 11],   [10],         [5, 13],       [12, 14, 16], [7, 13, 15],
+  [14, 18],     [13, 17],     [16, 18],      [15, 17, 19], [18, 20],
+  [19]
+];
+
+// ── Canvas Setup ───────────────────────────────────────────────
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+let gScale = 1, gOffX = 0, gOffY = 0, gDPR = 1;
+
+function resize() {
+  const ww = window.innerWidth, wh = window.innerHeight;
+  const s = Math.min(ww / W, wh / H);
+  const dpr = window.devicePixelRatio || 1;
+  gScale = s; gDPR = s * dpr;
+  canvas.style.width = (W * s) + "px";
+  canvas.style.height = (H * s) + "px";
+  canvas.width = Math.round(W * s * dpr);
+  canvas.height = Math.round(H * s * dpr);
+}
+window.addEventListener("resize", resize);
+resize();
+
+function screenToCanvas(sx, sy) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: (sx - rect.left) / gScale, y: (sy - rect.top) / gScale };
+}
+
+// ── Triangle Geometry Helpers ──────────────────────────────────
+function triVerts(cx, cy, side, ori) {
+  const h = side * 0.8660254;
+  if (ori === "up") return [{x:cx,y:cy-2*h/3},{x:cx-side/2,y:cy+h/3},{x:cx+side/2,y:cy+h/3}];
+  return [{x:cx,y:cy+2*h/3},{x:cx-side/2,y:cy-h/3},{x:cx+side/2,y:cy-h/3}];
+}
+
+function pointInTri(px, py, v) {
+  const d1=(px-v[1].x)*(v[0].y-v[1].y)-(v[0].x-v[1].x)*(py-v[1].y);
+  const d2=(px-v[2].x)*(v[1].y-v[2].y)-(v[1].x-v[2].x)*(py-v[2].y);
+  const d3=(px-v[0].x)*(v[2].y-v[0].y)-(v[2].x-v[0].x)*(py-v[0].y);
+  return !((d1<0||d2<0||d3<0)&&(d1>0||d2>0||d3>0));
+}
+
+function pointInTriPadded(px, py, cx, cy, side, ori, pad) {
+  return pointInTri(px, py, triVerts(cx, cy, side + pad*2, ori));
+}
+
+// ── Tween Engine ───────────────────────────────────────────────
+let tweens = [];
+
+function addTween(obj, prop, from, to, dur, ease, onDone, tag) {
+  if (tag) killTweens(tag);
+  const t = {obj,prop,from,to,dur,elapsed:0,ease:ease||easeOut,onDone:onDone||null,tag:tag||null,done:false};
+  if (obj && prop) obj[prop] = from;
+  tweens.push(t);
+  return t;
+}
+function killTweens(tag) { tweens = tweens.filter(t => t.tag !== tag); }
+function updateTweens(dt) {
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const t = tweens[i];
+    t.elapsed += dt;
+    let p = Math.min(t.elapsed / t.dur, 1);
+    p = t.ease(p);
+    if (t.obj && t.prop) t.obj[t.prop] = t.from + (t.to - t.from) * p;
+    if (t.elapsed >= t.dur) {
+      if (t.obj && t.prop) t.obj[t.prop] = t.to;
+      if (t.onDone) t.onDone();
+      tweens.splice(i, 1);
+    }
+  }
+}
+function easeOut(t) { return 1-(1-t)*(1-t); }
+function easeInOut(t) { return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; }
+function linear(t) { return t; }
+
+// ── Background Specks ──────────────────────────────────────────
+const specks = [];
+for (let i = 0; i < 20; i++) {
+  specks.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8,r:Math.random()*1.5+0.5,a:Math.random()*0.3+0.1});
+}
+function updateSpecks(dt) {
+  for (const s of specks) {
+    s.x+=s.vx*dt; s.y+=s.vy*dt;
+    if(s.x<0)s.x+=W;if(s.x>W)s.x-=W;if(s.y<0)s.y+=H;if(s.y>H)s.y-=H;
+  }
+}
+
+// ── Network Layer ──────────────────────────────────────────────
+const Net = {
+  ws: null,
+  connected: false,
+  myIndex: -1,    // 0=White, 1=Black
+  roomCode: "",
+
+  connect() {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    this.ws = new WebSocket(`${proto}//${location.host}`);
+    this.ws.onopen = () => { this.connected = true; };
+    this.ws.onclose = () => {
+      this.connected = false;
+      // If we were in a game, show disconnect
+      if (state.phase === "playing" || state.phase === "roundResult" || state.phase === "waitingAdvance") {
+        state.phase = "disconnected";
+        state.disconnectTimer = 3000;
+      }
+    };
+    this.ws.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      this.handleMessage(msg);
+    };
+  },
+
+  send(msg) {
+    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
+  },
+
+  handleMessage(msg) {
+    switch (msg.type) {
+      case "pong": break;
+
+      case "room_created":
+        this.myIndex = msg.playerIndex;
+        this.roomCode = msg.code;
+        if (msg.gameMode) state.gameMode = msg.gameMode;
+        state.phase = "waiting";
+        state.lobbyError = "";
+        break;
+
+      case "room_joined":
+        this.myIndex = msg.playerIndex;
+        this.roomCode = msg.code;
+        if (msg.gameMode) state.gameMode = msg.gameMode;
+        state.lobbyError = "";
+        break;
+
+      case "error":
+        state.lobbyError = msg.message;
+        break;
+
+      case "game_start":
+        if (msg.gameMode) state.gameMode = msg.gameMode;
+        startOnlineMatch(msg.firstPlayer);
+        break;
+
+      case "opponent_selected":
+        state.opponentSelectedValue = msg.value;
+        break;
+
+      case "piece_placed":
+        applyPlacement(msg.slotId, msg.value, msg.owner, msg.turnCount, msg.nextPlayer);
+        break;
+
+      case "round_result":
+        beginRevealOnline(msg.goldenSlot, msg.roundScores, msg.totalScores, msg.round);
+        break;
+
+      case "round_start":
+        startOnlineRound(msg.round, msg.firstPlayer);
+        break;
+
+      case "game_over":
+        showOnlineGameOver(msg.totalScores, msg.winner);
+        break;
+
+      case "opponent_disconnected":
+        state.phase = "disconnected";
+        state.disconnectTimer = 3000;
+        break;
+    }
+  }
+};
+
+// Keep-alive
+setInterval(() => { Net.send({ type: "ping" }); }, 30000);
+
+// ── Game State ─────────────────────────────────────────────────
+function freshState() {
+  return {
+    phase: "lobby",  // lobby, modeSelection, creating, joining, waiting, playing, roundResult, waitingAdvance, gameOver, disconnected
+    round: 1,
+    turnCount: 0,
+    currentPlayer: 0,
+    firstPlayer: 0,
+    gameMode: "regular", // regular or hidden
+    hiddenPiecesRevealed: false,
+    whiteHiddenOrder: [1, 10], // Order of 1 and 10 for white player (randomized in hidden mode)
+    blackHiddenOrder: [1, 10], // Order of 1 and 10 for black player (randomized in hidden mode)
+    board: new Array(21).fill(null),
+    whitePieces: Array.from({length:10},(_,i)=>({value:i+1,used:false})),
+    blackPieces: Array.from({length:10},(_,i)=>({value:i+1,used:false})),
+    selectedPiece: null,
+    opponentSelectedValue: null,
+    scores: [0, 0],
+    roundScores: [0, 0],
+    goldenSlot: -1,
+    slotAnim: Array.from({length:21},()=>({scale:1,shakeX:0,outlineFlash:0,glow:0,hoverTint:0})),
+    trayAnim: Array.from({length:20},()=>({scale:1})),
+    cameraZoom: 1,
+    goldFlash: 0,
+    menuAlpha: 1,
+    menuSlide: 0,
+    resultScale: 0,
+    toasts: [],
+    floatLabels: [],
+    revealStep: -1,
+    shimmer: 0,
+    gframePulse: 0,
+    intensityLevel: 0,
+    outlineBrighten: 0,
+    vignette: 0,
+    gframeGlow: 0,
+    // Lobby state
+    lobbyError: "",
+    joinCode: "",
+    disconnectTimer: 0,
+    // Lobby button hover
+    hoverCreate: false,
+    hoverJoin: false,
+    hoverHotSeat: false,
+    hoverBack: false,
+    hoverHowTo: false,
+    howToExpanded: false,
+    hoverRegular: false,
+    hoverHidden: false
+  };
+}
+
+let state = freshState();
+let prevTime = performance.now();
+
+// ── Online Game Flow ───────────────────────────────────────────
+function startOnlineMatch(firstPlayer) {
+  const oldPhase = state.phase;
+  const savedGameMode = state.gameMode; // Preserve game mode
+  const savedLobbyFields = { joinCode: state.joinCode };
+  state = freshState();
+  state.gameMode = savedGameMode; // Restore game mode
+
+  // Initialize randomized hidden piece order for hidden mode
+  if (state.gameMode === "hidden") {
+    state.whiteHiddenOrder = Math.random() < 0.5 ? [1, 10] : [10, 1];
+    state.blackHiddenOrder = Math.random() < 0.5 ? [1, 10] : [10, 1];
+  }
+
+  state.firstPlayer = firstPlayer;
+  state.currentPlayer = firstPlayer;
+  state.round = 1;
+  state.phase = "playing";
+  tweens = [];
+}
+
+function startOnlineRound(round, firstPlayer) {
+  state.board = new Array(21).fill(null);
+  state.whitePieces = Array.from({length:10},(_,i)=>({value:i+1,used:false}));
+  state.blackPieces = Array.from({length:10},(_,i)=>({value:i+1,used:false}));
+  state.selectedPiece = null;
+  state.opponentSelectedValue = null;
+  state.turnCount = 0;
+  state.goldenSlot = -1;
+  state.roundScores = [0, 0];
+  state.hiddenPiecesRevealed = false;
+  state.slotAnim = Array.from({length:21},()=>({scale:1,shakeX:0,outlineFlash:0,glow:0,hoverTint:0}));
+  state.floatLabels = [];
+  state.revealStep = -1;
+  state.intensityLevel = 0;
+  state.outlineBrighten = 0;
+  state.vignette = 0;
+  state.gframeGlow = 0;
+  state.cameraZoom = 1;
+  state.goldFlash = 0;
+  state.resultScale = 0;
+  state.round = round;
+  state.currentPlayer = firstPlayer;
+  state.phase = "playing";
+  killTweens("placement");
+  killTweens("shake");
+  killTweens("reveal");
+}
+
+function applyPlacement(slotId, value, owner, turnCount, nextPlayer) {
+  state.board[slotId] = { owner, value };
+
+  // Mark piece used
+  const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+  const p = pieces.find(pp => pp.value === value);
+  if (p) p.used = true;
+
+  state.selectedPiece = null;
+  state.opponentSelectedValue = null;
+  state.turnCount = turnCount;
+
+  // Sound
+  playPlaceClick();
+
+  // Placement pop animation
+  const sa = state.slotAnim[slotId];
+  addTween(sa, "scale", 0.85, 1.12, 70, easeOut, () => {
+    addTween(sa, "scale", 1.12, 1.0, 70, easeInOut, null, "placement");
+  }, "placement");
+
+  // Progressive intensity
+  updateIntensity();
+
+  // Milestone toasts
+  const remaining = 21 - turnCount;
+  if ([10, 5, 3, 2].includes(remaining)) {
+    addToast(`${remaining} slot${remaining > 1 ? "s" : ""} left`);
+    addTween(state, "shimmer", 1, 0, 250, easeOut, null, "shimmer");
+  }
+
+  // 20th placement effects
+  if (turnCount === 20) {
+    addTween(state, "cameraZoom", 1.0, 1.03, 110, easeOut, () => {
+      addTween(state, "cameraZoom", 1.03, 1.0, 110, easeInOut, null, "zoom");
+    }, "zoom");
+    addTween(state, "goldFlash", 1, 0, 160, easeOut, null, "flash");
+  } else {
+    state.currentPlayer = nextPlayer;
+  }
+}
+
+function beginRevealOnline(goldenSlot, roundScores, totalScores, round) {
+  state.goldenSlot = goldenSlot;
+  state.roundScores = roundScores;
+  state.scores = totalScores;
+
+  // Reveal hidden pieces first if in hidden mode
+  if (state.gameMode === "hidden" && !state.hiddenPiecesRevealed) {
+    state.hiddenPiecesRevealed = true;
+    // Brief pause to show revealed pieces (300ms)
+    setTimeout(() => {
+      continueRevealOnline(goldenSlot);
+    }, 300);
+  } else {
+    continueRevealOnline(goldenSlot);
+  }
+}
+
+function continueRevealOnline(goldenSlot) {
+  // Golden triangle pop
+  const sa = state.slotAnim[goldenSlot];
+  addTween(sa, "scale", 0.5, 1.12, 100, easeOut, () => {
+    addTween(sa, "scale", 1.12, 1.0, 100, easeInOut, null, "reveal");
+  }, "reveal");
+
+  // Adjacent glow
+  const adj = ADJ[goldenSlot];
+  const scoringPieces = [];
+  for (const a of adj) {
+    if (state.board[a]) {
+      scoringPieces.push({ slot: a, owner: state.board[a].owner, value: state.board[a].value });
+    }
+  }
+
+  scoringPieces.forEach((sp, idx) => {
+    setTimeout(() => {
+      if (state.phase !== "playing" && state.phase !== "roundResult") return;
+      const sAnim = state.slotAnim[sp.slot];
+      addTween(sAnim, "glow", 0, 1, 160, easeOut, null, "glow" + sp.slot);
+    }, 200 + idx * 160);
+  });
+
+  // Float labels
+  const labelStart = 200 + scoringPieces.length * 160;
+  scoringPieces.forEach((sp) => {
+    setTimeout(() => {
+      if (state.phase !== "playing" && state.phase !== "roundResult") return;
+      const slot = SLOTS[sp.slot];
+      const col = sp.owner === 0 ? COL.white : "#AAA";
+      state.floatLabels.push({ x: slot.x, y: slot.y, text: `+${sp.value}`, color: col, offsetY: 0, alpha: 1, timer: 0, dur: 350 });
+    }, labelStart);
+  });
+
+  // Show round result
+  setTimeout(() => {
+    state.phase = "roundResult";
+    addTween(state, "resultScale", 0.96, 1.0, 180, easeOut, null, "result");
+  }, 900);
+}
+
+function showOnlineGameOver(totalScores, winner) {
+  state.scores = totalScores;
+  state.phase = "gameOver";
+  state._onlineWinner = winner; // -1=draw, 0=white, 1=black
+}
+
+function returnToLobby() {
+  // Reconnect WebSocket if closed
+  if (!Net.connected) Net.connect();
+  Net.myIndex = -1;
+  Net.roomCode = "";
+  state = freshState();
+  tweens = [];
+}
+
+// ── Tray Layout ────────────────────────────────────────────────
+const TRAY_WHITE_CX = 150, TRAY_BLACK_CX = 810;
+const TRAY_WHITE_CY = 170, TRAY_BLACK_CY = 170;
+const TRAY_PIECE_S = 44;
+const TRAY_COLS = 5, TRAY_ROWS = 2;
+const TRAY_SPACEX = 52, TRAY_SPACEY = 56;
+
+function trayPiecePos(owner, index) {
+  const baseCx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
+  const baseCy = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
+  const col = index % TRAY_COLS;
+  const row = Math.floor(index / TRAY_COLS);
+  return { x: baseCx + (col - 2) * TRAY_SPACEX, y: baseCy + (row - 0.5) * TRAY_SPACEY };
+}
+
+// Get the display order for tray pieces (for hidden mode: 2,3,4,5,6,7,8,9, then randomized 1 and 10)
+function getTrayDisplayOrder(owner) {
+  if (state.gameMode !== "hidden") {
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  }
+  const hiddenOrder = owner === 0 ? state.whiteHiddenOrder : state.blackHiddenOrder;
+  return [2, 3, 4, 5, 6, 7, 8, 9, hiddenOrder[0], hiddenOrder[1]];
+}
+
+// ── Drawing Helpers ────────────────────────────────────────────
+function drawTriPath(c, cx, cy, side, ori) {
+  const v = triVerts(cx, cy, side, ori);
+  c.beginPath(); c.moveTo(v[0].x, v[0].y); c.lineTo(v[1].x, v[1].y); c.lineTo(v[2].x, v[2].y); c.closePath();
+}
+
+// Check if a piece should be hidden from view in Hidden mode
+function shouldHidePiece(pieceOwner, pieceValue) {
+  if (state.gameMode !== "hidden") return false;
+  if (state.hiddenPiecesRevealed) return false;
+  // Hide opponent's 1 and 10 from me
+  if (pieceOwner !== Net.myIndex && (pieceValue === 1 || pieceValue === 10)) {
+    return true;
+  }
+  return false;
+}
+
+function drawBevelTri(c, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, label, scale, isHidden) {
+  scale = scale || 1;
+  const s = side * scale;
+  c.save();
+  drawTriPath(c, cx, cy, s, ori);
+  c.fillStyle = baseCol; c.fill();
+  const v = triVerts(cx, cy, s, ori);
+  if (ori === "up") {
+    c.beginPath(); c.moveTo(v[0].x,v[0].y); c.lineTo(v[1].x,v[1].y);
+    c.strokeStyle=hiCol; c.lineWidth=2.5; c.stroke();
+    c.beginPath(); c.moveTo(v[0].x,v[0].y); c.lineTo(v[2].x,v[2].y);
+    c.strokeStyle=shCol; c.lineWidth=2; c.stroke();
+    c.beginPath(); c.moveTo(v[1].x,v[1].y); c.lineTo(v[2].x,v[2].y);
+    c.strokeStyle=shCol; c.lineWidth=2; c.stroke();
+  } else {
+    c.beginPath(); c.moveTo(v[1].x,v[1].y); c.lineTo(v[2].x,v[2].y);
+    c.strokeStyle=hiCol; c.lineWidth=2.5; c.stroke();
+    c.beginPath(); c.moveTo(v[0].x,v[0].y); c.lineTo(v[1].x,v[1].y);
+    c.strokeStyle=shCol; c.lineWidth=2; c.stroke();
+    c.beginPath(); c.moveTo(v[0].x,v[0].y); c.lineTo(v[2].x,v[2].y);
+    c.strokeStyle=shCol; c.lineWidth=2; c.stroke();
+  }
+  if (label !== undefined && label !== null) {
+    const fontSize = Math.max(16, s * 0.42)|0;
+    c.font = `bold ${fontSize}px sans-serif`;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    const labelOff = ori === "up" ? s*0.08 : -s*0.08;
+    c.fillStyle = labelCol;
+    // Show "?" if hidden, otherwise show the number
+    const displayText = isHidden ? "?" : String(label);
+    c.fillText(displayText, cx, cy + labelOff);
+  }
+  c.restore();
+}
+
+// ── G-Frame ────────────────────────────────────────────────────
+function drawGFrame(c, now) {
+  c.save();
+  const outerR = 232, innerR = 160;
+  function hexPt(r, a) { const rad=a*Math.PI/180; return {x:CX+r*Math.cos(rad),y:CY+r*Math.sin(rad)}; }
+  const angles = [0,60,120,180,240,300];
+  const outerPts = angles.map(a => hexPt(outerR, a));
+  const innerPts = angles.map(a => hexPt(innerR, a));
+  const pulseAmt = state.gframeGlow * (0.5 + 0.5 * Math.sin(now / 600));
+  for (let i = 0; i < 6; i++) {
+    if (i === 5) continue;
+    const i2 = (i + 1) % 6;
+    c.beginPath();
+    c.moveTo(outerPts[i].x,outerPts[i].y); c.lineTo(outerPts[i2].x,outerPts[i2].y);
+    c.lineTo(innerPts[i2].x,innerPts[i2].y); c.lineTo(innerPts[i].x,innerPts[i].y);
+    c.closePath();
+    const grd = c.createLinearGradient(outerPts[i].x,outerPts[i].y-20,outerPts[i2].x,outerPts[i2].y+20);
+    const hiBoost = state.outlineBrighten*0.15 + pulseAmt*0.2;
+    grd.addColorStop(0, lerpColor(COL.goldHi,"#FFFFFF",hiBoost));
+    grd.addColorStop(0.5, lerpColor(COL.goldBase,"#FFFFFF",hiBoost*0.5));
+    grd.addColorStop(1, COL.goldSh);
+    c.fillStyle = grd; c.fill();
+    c.strokeStyle = COL.goldSh; c.lineWidth = 1; c.stroke();
+  }
+  if (state.shimmer > 0) {
+    c.globalAlpha = state.shimmer * 0.4;
+    for (let i = 0; i < 6; i++) {
+      if (i === 5) continue;
+      const i2 = (i + 1) % 6;
+      c.beginPath();
+      c.moveTo(outerPts[i].x,outerPts[i].y); c.lineTo(outerPts[i2].x,outerPts[i2].y);
+      c.lineTo(innerPts[i2].x,innerPts[i2].y); c.lineTo(innerPts[i].x,innerPts[i].y);
+      c.closePath(); c.fillStyle=COL.goldHi; c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+  c.restore();
+}
+
+// ── Color Utilities ────────────────────────────────────────────
+function hexToRgb(hex) { const n=parseInt(hex.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function rgbToHex(r,g,b) { return "#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
+function lerpColor(c1,c2,t) {
+  t=Math.max(0,Math.min(1,t));
+  const a=hexToRgb(c1),b=hexToRgb(c2);
+  return rgbToHex(Math.round(a[0]+(b[0]-a[0])*t),Math.round(a[1]+(b[1]-a[1])*t),Math.round(a[2]+(b[2]-a[2])*t));
+}
+
+// ── Background ─────────────────────────────────────────────────
+function drawBackground(c) {
+  const grd = c.createRadialGradient(CX,CY,50,CX,CY,500);
+  grd.addColorStop(0,COL.bgMid); grd.addColorStop(1,COL.bgDeep);
+  c.fillStyle = grd; c.fillRect(0,0,W,H);
+  if (state.vignette > 0) {
+    const vg = c.createRadialGradient(CX,CY,100,CX,CY,450);
+    vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${state.vignette*0.3})`);
+    c.fillStyle = vg; c.fillRect(0,0,W,H);
+  }
+  for (const s of specks) {
+    c.beginPath(); c.arc(s.x,s.y,s.r,0,Math.PI*2);
+    c.fillStyle=`rgba(200,200,220,${s.a})`; c.fill();
+  }
+}
+
+// ── Board Rendering ────────────────────────────────────────────
+function drawBoard(c, now) {
+  const zoom = state.cameraZoom;
+  c.save();
+  c.translate(CX,CY); c.scale(zoom,zoom); c.translate(-CX,-CY);
+
+  for (let i = 0; i < 21; i++) {
+    const slot = SLOTS[i];
+    const sa = state.slotAnim[i];
+    const sx = CX + slot.x + sa.shakeX, sy = CY + slot.y;
+
+    drawTriPath(c, sx, sy, S, slot.ori);
+    c.fillStyle = "#1A1F28"; c.fill();
+
+    if (sa.hoverTint > 0 && state.selectedPiece) {
+      drawTriPath(c, sx, sy, S, slot.ori);
+      const tintCol = state.currentPlayer === 0 ? "rgba(242,242,242," : "rgba(18,18,18,";
+      c.fillStyle = tintCol + (sa.hoverTint * 0.12) + ")"; c.fill();
+    }
+
+    drawTriPath(c, sx, sy, S, slot.ori);
+    const outlineBase = lerpColor(COL.slotOutline, "#AABBCC", state.outlineBrighten);
+    if (sa.outlineFlash > 0) {
+      c.strokeStyle = lerpColor(outlineBase, COL.denied, sa.outlineFlash);
+      c.lineWidth = 2;
+    } else { c.strokeStyle = outlineBase; c.lineWidth = 1; }
+    c.stroke();
+
+    if (state.goldenSlot === i) {
+      drawBevelTri(c, sx, sy, PIECE_S, slot.ori, COL.goldenBright, "#FFF5C0", COL.goldBase, COL.goldSh, null, sa.scale);
+      c.save();
+      c.font = "bold 24px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+      const off = slot.ori === "up" ? 4 : -4;
+      c.fillStyle = COL.goldSh; c.fillText("\u2605", sx, sy + off);
+      c.restore();
+    } else if (state.board[i]) {
+      const piece = state.board[i];
+      const isWhite = piece.owner === 0;
+      const bc=isWhite?COL.white:COL.black, hc=isWhite?"#FFFFFF":COL.blackHi;
+      const sc=isWhite?COL.whiteSh:"#000000", lc=isWhite?COL.black:COL.white;
+      if (sa.glow > 0) {
+        drawTriPath(c, sx, sy, PIECE_S+8, slot.ori);
+        c.fillStyle = isWhite?`rgba(242,242,242,${sa.glow*0.5})`:`rgba(100,100,100,${sa.glow*0.5})`;
+        c.fill();
+      }
+      const isHidden = shouldHidePiece(piece.owner, piece.value);
+      drawBevelTri(c, sx, sy, PIECE_S, slot.ori, bc, hc, sc, lc, piece.value, sa.scale, isHidden);
+    }
+  }
+
+  for (const fl of state.floatLabels) {
+    if (fl.alpha > 0) {
+      c.save(); c.globalAlpha=fl.alpha;
+      c.font="bold 22px sans-serif"; c.textAlign="center"; c.textBaseline="middle";
+      c.fillStyle=fl.color; c.fillText(fl.text, CX+fl.x, CY+fl.y+fl.offsetY);
+      c.restore();
+    }
+  }
+  c.restore();
+}
+
+// ── Tray Rendering ─────────────────────────────────────────────
+function drawTrays(c, now) {
+  const zoom = state.cameraZoom;
+  c.save();
+  c.translate(CX,CY); c.scale(zoom,zoom); c.translate(-CX,-CY);
+
+  const myIdx = Net.myIndex;
+
+  for (let owner = 0; owner < 2; owner++) {
+    const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+    const displayOrder = getTrayDisplayOrder(owner);
+
+    for (let i = 0; i < 10; i++) {
+      const pieceValue = displayOrder[i];
+      const p = pieces[pieceValue - 1]; // pieces array is 0-indexed, values are 1-10
+      if (p.used) continue;
+
+      const pos = trayPiecePos(owner, i);
+      const breathe = 1 + 0.02 * Math.sin(now / 1200 + i * 0.7);
+      let sc = breathe;
+
+      const isSelected = state.selectedPiece && state.selectedPiece.owner === owner && state.selectedPiece.value === p.value;
+      // Show opponent's selection with a dimmer indicator
+      const isOpponentSelected = owner !== myIdx && state.opponentSelectedValue === p.value;
+
+      if (isSelected) sc = 1.05;
+
+      const isWhite = owner === 0;
+      const bc=isWhite?COL.white:COL.black, hc=isWhite?"#FFFFFF":COL.blackHi;
+      const shc=isWhite?COL.whiteSh:"#000000", lc=isWhite?COL.black:COL.white;
+
+      if (isSelected) {
+        drawTriPath(c, pos.x, pos.y, TRAY_PIECE_S+6, "down");
+        c.strokeStyle = COL.accent; c.lineWidth = 3;
+        c.shadowColor = COL.accent; c.shadowBlur = 8;
+        c.stroke(); c.shadowBlur = 0;
+      } else if (isOpponentSelected) {
+        drawTriPath(c, pos.x, pos.y, TRAY_PIECE_S+6, "down");
+        c.strokeStyle = COL.denied; c.lineWidth = 2;
+        c.globalAlpha = 0.5; c.stroke(); c.globalAlpha = 1;
+      }
+
+      // Dim opponent's tray slightly
+      if (owner !== myIdx) c.globalAlpha = 0.6;
+      const isHidden = shouldHidePiece(owner, p.value);
+      drawBevelTri(c, pos.x, pos.y, TRAY_PIECE_S, "down", bc, hc, shc, lc, p.value, sc, isHidden);
+      c.globalAlpha = 1;
+    }
+
+    // Tray labels - "YOU" / "OPPONENT"
+    const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
+    const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
+    c.font = "bold 14px sans-serif";
+    c.textAlign = "center"; c.textBaseline = "middle";
+    const isActive = state.currentPlayer === owner && state.phase === "playing";
+    c.fillStyle = isActive ? COL.accent : (owner === 0 ? "#AAA" : "#666");
+
+    const label = owner === myIdx ? "YOU" : "OPPONENT";
+    const colorLabel = owner === 0 ? " (White)" : " (Black)";
+    c.fillText(label + colorLabel, lx, ly - 55);
+  }
+
+  c.restore();
+}
+
+// ── HUD ────────────────────────────────────────────────────────
+function drawHUD(c, now) {
+  if (state.phase !== "playing") return;
+  const myIdx = Net.myIndex;
+  const isMyTurn = state.currentPlayer === myIdx;
+  const pulseA = 0.6 + 0.4 * Math.sin(now / 400);
+
+  c.save();
+  c.font = "bold 20px sans-serif";
+  c.textAlign = "center"; c.textBaseline = "top";
+  c.fillStyle = isMyTurn ? COL.accent : "#889";
+  c.globalAlpha = isMyTurn ? pulseA : 0.7;
+  c.fillText(isMyTurn ? "Your turn" : "Opponent's turn", CX, 16);
+  c.globalAlpha = 1;
+
+  // Round
+  c.font = "16px sans-serif";
+  c.fillStyle = "#AAB";
+  c.fillText(`Round ${state.round}/2`, CX, 42);
+
+  // Scores
+  c.font = "bold 15px sans-serif";
+  c.textAlign = "left";
+  c.fillStyle = COL.white;
+  c.fillText(`White: ${state.scores[0]}`, 20, 16);
+  c.textAlign = "right";
+  c.fillStyle = "#999";
+  c.fillText(`Black: ${state.scores[1]}`, W - 20, 16);
+
+  // Room code
+  c.font = "12px sans-serif";
+  c.textAlign = "right";
+  c.fillStyle = "#556";
+  c.fillText(`Room: ${Net.roomCode}`, W - 20, 36);
+
+  // Controls hint
+  c.font = "12px sans-serif";
+  c.textAlign = "center";
+  c.fillStyle = "#667";
+  c.fillText("Tap piece \u2192 tap slot  |  R: Return to lobby", CX, H - 16);
+
+  c.restore();
+}
+
+// ── Toasts ─────────────────────────────────────────────────────
+function addToast(text) { state.toasts.push({text, timer: 0, dur: 900}); }
+
+function drawToasts(c, dt) {
+  for (let i = state.toasts.length - 1; i >= 0; i--) {
+    const t = state.toasts[i];
+    t.timer += dt;
+    if (t.timer >= t.dur) { state.toasts.splice(i, 1); continue; }
+    const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
+    c.save(); c.globalAlpha = Math.max(0, alpha);
+    c.font = "bold 18px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = COL.goldenBright; c.fillText(t.text, CX, H - 60);
+    c.restore();
+  }
+}
+
+// ── Overlays ───────────────────────────────────────────────────
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath(); c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.quadraticCurveTo(x+w,y,x+w,y+r);
+  c.lineTo(x+w,y+h-r); c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  c.lineTo(x+r,y+h); c.quadraticCurveTo(x,y+h,x,y+h-r);
+  c.lineTo(x,y+r); c.quadraticCurveTo(x,y,x+r,y); c.closePath();
+}
+
+// ── Lobby Drawing ──────────────────────────────────────────────
+// Button rectangles for hit testing
+const BTN_CREATE = { x: CX - 130, y: 235, w: 260, h: 50, r: 10 };
+const BTN_JOIN = { x: CX - 130, y: 300, w: 260, h: 50, r: 10 };
+const BTN_HOTSEAT = { x: CX - 130, y: 365, w: 260, h: 50, r: 10 };
+const BTN_BACK = { x: CX - 80, y: 365, w: 160, h: 40, r: 8 };
+const BTN_HOWTO = { x: CX - 80, y: 425, w: 160, h: 30, r: 6 };
+const BTN_REGULAR = { x: CX - 140, y: 200, w: 280, h: 80, r: 10 };
+const BTN_HIDDEN = { x: CX - 140, y: 300, w: 280, h: 80, r: 10 };
+
+function drawLobby(c, now) {
+  if (state.phase !== "lobby" && state.phase !== "waiting" && state.phase !== "joining") return;
+
+  c.save();
+  // Dim
+  c.fillStyle = "rgba(10,14,20,0.75)";
+  c.fillRect(0, 0, W, H);
+
+  // Title
+  c.font = "88px 'Federo', cursive";
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = COL.goldBase;
+  c.fillText("Golden Triangle", CX, 155);
+
+  if (state.phase === "lobby") {
+    // Create Game button
+    const bc = BTN_CREATE;
+    roundRect(c, bc.x, bc.y, bc.w, bc.h, bc.r);
+    c.fillStyle = state.hoverCreate ? "#3A4A5A" : "#2A3A4A";
+    c.fill();
+    c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
+    c.font = "bold 22px sans-serif";
+    c.fillStyle = COL.accent;
+    c.fillText("Create Game", CX, bc.y + bc.h/2);
+
+    // Join Game button
+    const bj = BTN_JOIN;
+    roundRect(c, bj.x, bj.y, bj.w, bj.h, bj.r);
+    c.fillStyle = state.hoverJoin ? "#3A4A5A" : "#2A3A4A";
+    c.fill();
+    c.strokeStyle = COL.white; c.lineWidth = 2; c.stroke();
+    c.font = "bold 22px sans-serif";
+    c.fillStyle = COL.white;
+    c.fillText("Join Game", CX, bj.y + bj.h/2);
+
+    // Hot Seat button
+    const bh = BTN_HOTSEAT;
+    roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
+    c.fillStyle = state.hoverHotSeat ? "#3A4A3A" : "#2A3A2A";
+    c.fill();
+    c.strokeStyle = COL.goldenBright; c.lineWidth = 2; c.stroke();
+    c.font = "bold 22px sans-serif";
+    c.fillStyle = COL.goldenBright;
+    c.fillText("Hot Seat", CX, bh.y + bh.h/2);
+
+    // Error
+    if (state.lobbyError) {
+      c.font = "bold 16px sans-serif";
+      c.fillStyle = COL.denied;
+      c.fillText(state.lobbyError, CX, 420);
+    }
+
+    // How to Play toggle
+    const bht = BTN_HOWTO;
+    c.font = "bold 14px sans-serif";
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = state.hoverHowTo ? "#AAB" : "#778";
+    const arrow = state.howToExpanded ? "\u25B2" : "\u25BC";
+    c.fillText(arrow + " How to Play " + arrow, CX, bht.y + bht.h/2);
+
+    if (state.howToExpanded) {
+      // Dim overlay
+      c.fillStyle = "rgba(10,14,20,0.7)";
+      c.fillRect(0, 0, W, H);
+
+      const lines = [
+        "Alternate placing numbered triangles (1\u201310) onto the board.",
+        "After the last placement, the final, empty slot becomes the Golden Triangle.",
+        "Triangles adjacent to the Golden Triangle score points.",
+        "Whoever has the most points at the end of two rounds is the winner!"
+      ];
+      const lineH = 28, pad = 20;
+      const boxW = 540, boxR = 10;
+      const boxH = pad * 2 + lines.length * lineH + 50;
+      const boxX = CX - boxW/2, boxY = CY - boxH/2;
+
+      roundRect(c, boxX, boxY, boxW, boxH, boxR);
+      c.fillStyle = "rgba(30,36,48,0.95)"; c.fill();
+      c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+
+      c.font = "bold 22px sans-serif";
+      c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillStyle = COL.goldenBright;
+      c.fillText("How to Play", CX, boxY + 30);
+
+      c.font = "15px sans-serif";
+      c.fillStyle = "#CCD";
+      for (let i = 0; i < lines.length; i++) {
+        c.fillText(lines[i], CX, boxY + 65 + i * lineH);
+      }
+
+      c.font = "13px sans-serif";
+      c.fillStyle = "#667";
+      c.fillText("Click anywhere to close", CX, boxY + boxH - 18);
+    }
+  }
+  else if (state.phase === "waiting") {
+    // Waiting for opponent
+    c.font = "bold 24px sans-serif";
+    c.fillStyle = COL.white;
+    c.fillText("Room Code:", CX, 220);
+
+    c.font = "bold 64px sans-serif";
+    c.fillStyle = COL.goldenBright;
+    c.fillText(Net.roomCode, CX, 280);
+
+    const blink = 0.5 + 0.5 * Math.sin(now / 500);
+    c.globalAlpha = blink;
+    c.font = "20px sans-serif";
+    c.fillStyle = "#AAB";
+    c.fillText("Waiting for opponent...", CX, 340);
+    c.globalAlpha = 1;
+
+    // Back button
+    const bb = BTN_BACK;
+    roundRect(c, bb.x, bb.y, bb.w, bb.h, bb.r);
+    c.fillStyle = state.hoverBack ? "#3A3A3A" : "#2A2A2A";
+    c.fill();
+    c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+    c.font = "16px sans-serif";
+    c.fillStyle = "#AAB";
+    c.fillText("Cancel", CX, bb.y + bb.h/2);
+  }
+  else if (state.phase === "joining") {
+    // Join input
+    c.font = "bold 24px sans-serif";
+    c.fillStyle = COL.white;
+    c.fillText("Enter Room Code:", CX, 220);
+
+    // Input box
+    const inputW = 240, inputH = 60;
+    const inputX = CX - inputW/2, inputY = 255;
+    roundRect(c, inputX, inputY, inputW, inputH, 8);
+    c.fillStyle = "#1A1F28"; c.fill();
+    c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
+
+    c.font = "bold 48px sans-serif";
+    c.fillStyle = COL.white;
+    c.fillText(state.joinCode, CX, inputY + inputH/2);
+
+    // Cursor blink
+    if (state.joinCode.length < 4) {
+      const blink = Math.sin(now / 400) > 0 ? 1 : 0;
+      if (blink) {
+        const charW = 28;
+        const cursorX = CX + (state.joinCode.length - 2) * charW + charW/2;
+        c.fillStyle = COL.accent;
+        c.fillRect(cursorX, inputY + 12, 3, inputH - 24);
+      }
+    }
+
+    // Instructions
+    c.font = "16px sans-serif";
+    c.fillStyle = "#889";
+    c.fillText("Type 4-character code, then press Enter", CX, 340);
+
+    // Error
+    if (state.lobbyError) {
+      c.font = "bold 16px sans-serif";
+      c.fillStyle = COL.denied;
+      c.fillText(state.lobbyError, CX, 370);
+    }
+
+    // Back button
+    const bb = BTN_BACK;
+    roundRect(c, bb.x, bb.y, bb.w, bb.h, bb.r);
+    c.fillStyle = state.hoverBack ? "#3A3A3A" : "#2A2A2A";
+    c.fill();
+    c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+    c.font = "16px sans-serif";
+    c.fillStyle = "#AAB";
+    c.fillText("Back", CX, bb.y + bb.h/2);
+  }
+
+  c.restore();
+}
+
+function drawModeSelection(c) {
+  if (state.phase !== "modeSelection") return;
+
+  c.save();
+  // Dim
+  c.fillStyle = "rgba(10,14,20,0.75)";
+  c.fillRect(0, 0, W, H);
+
+  // Title
+  c.font = "bold 36px sans-serif";
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = COL.goldBase;
+  c.fillText("Select Game Mode", CX, 120);
+
+  // Regular mode button
+  const br = BTN_REGULAR;
+  roundRect(c, br.x, br.y, br.w, br.h, br.r);
+  c.fillStyle = state.hoverRegular ? "#3A4A5A" : "#2A3A4A";
+  c.fill();
+  c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
+  c.font = "bold 24px sans-serif";
+  c.fillStyle = COL.accent;
+  c.fillText("Regular", CX, br.y + 28);
+  c.font = "14px sans-serif";
+  c.fillStyle = "#AAB";
+  c.fillText("Standard game rules", CX, br.y + 56);
+
+  // Hidden mode button
+  const bh = BTN_HIDDEN;
+  roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
+  c.fillStyle = state.hoverHidden ? "#4A3A3A" : "#3A2A2A";
+  c.fill();
+  c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+  c.font = "bold 24px sans-serif";
+  c.fillStyle = COL.goldBase;
+  c.fillText("Hidden", CX, bh.y + 28);
+  c.font = "14px sans-serif";
+  c.fillStyle = "#AAB";
+  c.fillText("Each player's 1 & 10 are hidden", CX, bh.y + 56);
+
+  // Back button (positioned below hidden button)
+  const backBtnY = 400;
+  const backBtnW = 160, backBtnH = 40, backBtnR = 8;
+  const backBtnX = CX - backBtnW/2;
+  roundRect(c, backBtnX, backBtnY, backBtnW, backBtnH, backBtnR);
+  c.fillStyle = state.hoverBack ? "#3A3A3A" : "#2A2A2A";
+  c.fill();
+  c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+  c.font = "16px sans-serif";
+  c.fillStyle = "#AAB";
+  c.fillText("Back", CX, backBtnY + backBtnH/2);
+
+  c.restore();
+}
+
+function drawRoundResult(c) {
+  if (state.phase !== "roundResult" && state.phase !== "waitingAdvance") return;
+  c.save();
+  const sc = state.resultScale;
+
+  c.fillStyle = "rgba(10,14,20,0.5)";
+  c.fillRect(0, 0, W, H);
+
+  c.translate(CX, CY); c.scale(sc, sc); c.translate(-CX, -CY);
+
+  const pw = 360, ph = 260;
+  const px = CX - pw/2, py = CY - ph/2;
+
+  roundRect(c, px, py, pw, ph, 12);
+  c.fillStyle = "rgba(30,36,48,0.95)"; c.fill();
+  c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+
+  c.font = "bold 24px sans-serif";
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = COL.goldenBright;
+  c.fillText(`Round ${state.round} Results`, CX, py + 35);
+
+  c.font = "bold 30px sans-serif";
+  const myIdx = Net.myIndex;
+
+  // Show scores with YOU/OPPONENT labels
+  c.fillStyle = COL.white;
+  c.fillText(`White${myIdx === 0 ? " (You)" : ""}: ${state.roundScores[0]}`, CX, py + ph/2 - 25);
+  c.fillStyle = "#AAA";
+  c.fillText(`Black${myIdx === 1 ? " (You)" : ""}: ${state.roundScores[1]}`, CX, py + ph/2 + 15);
+
+  if (state.phase === "waitingAdvance") {
+    c.font = "14px sans-serif";
+    c.fillStyle = "#667";
+    c.fillText("Waiting for opponent...", CX, py + ph - 30);
+  } else {
+    const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
+    c.globalAlpha = blink;
+    c.font = "bold 18px sans-serif";
+    c.fillStyle = COL.accent;
+    const contText = state.round < 2 ? "Space / Enter / Click: Next Round" : "Space / Enter / Click: View Winner";
+    c.fillText(contText, CX, py + ph - 30);
+    c.globalAlpha = 1;
+  }
+
+  c.restore();
+}
+
+function drawGameOver(c) {
+  if (state.phase !== "gameOver") return;
+  c.save();
+
+  c.fillStyle = "rgba(10,14,20,0.7)";
+  c.fillRect(0, 0, W, H);
+
+  const pw = 360, ph = 260;
+  const px = CX - pw/2, py = CY - ph/2;
+
+  roundRect(c, px, py, pw, ph, 12);
+  c.fillStyle = "rgba(30,36,48,0.95)"; c.fill();
+  c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+
+  const myIdx = Net.myIndex;
+  const winner = state._onlineWinner;
+  let heading;
+  if (winner === -1) heading = "Draw!";
+  else if (winner === myIdx) heading = "You Win!";
+  else heading = "You Lose";
+
+  c.font = "bold 28px sans-serif";
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = winner === myIdx ? COL.goldenBright : (winner === -1 ? "#AAB" : COL.denied);
+  c.fillText(heading, CX, py + 40);
+
+  c.font = "bold 30px sans-serif";
+  c.fillStyle = COL.white;
+  c.fillText(`White${myIdx === 0 ? " (You)" : ""}: ${state.scores[0]}`, CX, py + ph/2 - 15);
+  c.fillStyle = "#AAA";
+  c.fillText(`Black${myIdx === 1 ? " (You)" : ""}: ${state.scores[1]}`, CX, py + ph/2 + 25);
+
+  const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
+  c.globalAlpha = blink;
+  c.font = "bold 18px sans-serif";
+  c.fillStyle = COL.accent;
+  c.fillText("Space / Enter / Click: Return to Lobby", CX, py + ph - 25);
+  c.globalAlpha = 1;
+
+  c.restore();
+}
+
+function drawDisconnected(c, dt) {
+  if (state.phase !== "disconnected") return;
+  state.disconnectTimer -= dt * 1000;
+  if (state.disconnectTimer <= 0) {
+    returnToLobby();
+    return;
+  }
+  c.save();
+  c.fillStyle = "rgba(10,14,20,0.8)";
+  c.fillRect(0, 0, W, H);
+  c.font = "bold 28px sans-serif";
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = COL.denied;
+  c.fillText("Opponent Disconnected", CX, CY - 20);
+  c.font = "18px sans-serif";
+  c.fillStyle = "#AAB";
+  c.fillText("Returning to lobby...", CX, CY + 20);
+  c.restore();
+}
+
+function drawGoldFlash(c) {
+  if (state.goldFlash > 0) {
+    c.save();
+    c.fillStyle = `rgba(245,217,107,${state.goldFlash * 0.18})`;
+    c.fillRect(0, 0, W, H);
+    c.restore();
+  }
+}
+
+// ── Intensity ──────────────────────────────────────────────────
+function updateIntensity() {
+  const tc = state.turnCount;
+  if (tc >= 18) { state.outlineBrighten=1; state.vignette=1; state.gframeGlow=1; }
+  else if (tc >= 15) { state.outlineBrighten=1; state.vignette=1; state.gframeGlow=0; }
+  else if (tc >= 10) { state.outlineBrighten=1; state.vignette=0; state.gframeGlow=0; }
+}
+
+// ── Float Labels ───────────────────────────────────────────────
+function updateFloatLabels(dt) {
+  for (let i = state.floatLabels.length - 1; i >= 0; i--) {
+    const fl = state.floatLabels[i];
+    fl.timer += dt * 1000;
+    const p = Math.min(fl.timer / fl.dur, 1);
+    fl.offsetY = -18 * p; fl.alpha = 1 - p;
+    if (p >= 1) state.floatLabels.splice(i, 1);
+  }
+}
+
+// ── Input Handling ─────────────────────────────────────────────
+let hoveredSlot = -1;
+
+function pointInRect(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+function handleClick(canvasX, canvasY) {
+  // Lobby
+  if (state.phase === "lobby") {
+    // Close How to Play overlay if open
+    if (state.howToExpanded) {
+      state.howToExpanded = false;
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, BTN_CREATE)) {
+      if (!Net.connected) return;
+      playPlaceClick();
+      state.phase = "modeSelection";
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, BTN_JOIN)) {
+      playPlaceClick();
+      state.phase = "joining";
+      state.joinCode = "";
+      state.lobbyError = "";
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, BTN_HOTSEAT)) {
+      playPlaceClick();
+      window.location.href = "golden-triangle.html";
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, BTN_HOWTO)) {
+      state.howToExpanded = !state.howToExpanded;
+      return;
+    }
+    return;
+  }
+
+  // Mode Selection
+  if (state.phase === "modeSelection") {
+    if (pointInRect(canvasX, canvasY, BTN_REGULAR)) {
+      playPlaceClick();
+      state.gameMode = "regular";
+      Net.send({ type: "create_room", gameMode: "regular" });
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, BTN_HIDDEN)) {
+      playPlaceClick();
+      state.gameMode = "hidden";
+      Net.send({ type: "create_room", gameMode: "hidden" });
+      return;
+    }
+    // Back button (custom position for mode selection)
+    const modeBackBtn = { x: CX - 80, y: 400, w: 160, h: 40 };
+    if (pointInRect(canvasX, canvasY, modeBackBtn)) {
+      state.phase = "lobby";
+      return;
+    }
+    return;
+  }
+
+  // Waiting (cancel)
+  if (state.phase === "waiting") {
+    if (pointInRect(canvasX, canvasY, BTN_BACK)) {
+      returnToLobby();
+    }
+    return;
+  }
+
+  // Joining (back button)
+  if (state.phase === "joining") {
+    if (pointInRect(canvasX, canvasY, BTN_BACK)) {
+      state.phase = "lobby";
+      state.joinCode = "";
+      state.lobbyError = "";
+    }
+    return;
+  }
+
+  // Round result - advance
+  if (state.phase === "roundResult") {
+    state.phase = "waitingAdvance";
+    Net.send({ type: "advance_round" });
+    return;
+  }
+
+  // Waiting for advance ack
+  if (state.phase === "waitingAdvance") return;
+
+  // Game over - return to lobby
+  if (state.phase === "gameOver") {
+    returnToLobby();
+    return;
+  }
+
+  // Disconnected
+  if (state.phase === "disconnected") return;
+
+  // Playing
+  if (state.phase !== "playing") return;
+
+  const myIdx = Net.myIndex;
+  const isMyTurn = state.currentPlayer === myIdx;
+
+  const zoom = state.cameraZoom;
+  const adjX = CX + (canvasX - CX) / zoom;
+  const adjY = CY + (canvasY - CY) / zoom;
+
+  // Check tray clicks - only own tray when it's your turn
+  for (let owner = 0; owner < 2; owner++) {
+    const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+    const displayOrder = getTrayDisplayOrder(owner);
+
+    for (let i = 0; i < 10; i++) {
+      const pieceValue = displayOrder[i];
+      const p = pieces[pieceValue - 1]; // pieces array is 0-indexed, values are 1-10
+      if (p.used) continue;
+
+      const pos = trayPiecePos(owner, i);
+      const tpx = CX + (pos.x - CX), tpy = CY + (pos.y - CY);
+
+      if (pointInTriPadded(adjX, adjY, tpx, tpy, TRAY_PIECE_S, "down", 8)) {
+        if (owner !== myIdx) return; // Can't select opponent's pieces
+        if (!isMyTurn) return; // Can't select when not your turn
+
+        if (state.selectedPiece && state.selectedPiece.value === p.value && state.selectedPiece.owner === owner) {
+          state.selectedPiece = null;
+          Net.send({ type: "select_piece", value: -1 });
+        } else {
+          state.selectedPiece = { owner, value: p.value };
+          Net.send({ type: "select_piece", value: p.value });
+        }
+        return;
+      }
+    }
+  }
+
+  // Check board slot clicks
+  if (!isMyTurn) return; // Can't place when not your turn
+
+  for (let i = 0; i < 21; i++) {
+    const slot = SLOTS[i];
+    const sx = CX + slot.x, sy = CY + slot.y;
+    let hit = pointInTri(adjX, adjY, triVerts(sx, sy, S, slot.ori));
+    if (!hit) hit = pointInTriPadded(adjX, adjY, sx, sy, S, slot.ori, 6);
+
+    if (hit) {
+      if (state.board[i] != null) { denySlot(i); return; }
+      if (!state.selectedPiece) { denySlot(i); return; }
+
+      // Send to server for validation
+      Net.send({ type: "place_piece", slotId: i, value: state.selectedPiece.value });
+      return;
+    }
+  }
+}
+
+function denySlot(slotId) {
+  const sa = state.slotAnim[slotId];
+  const shakeDur = 120;
+  const startTime = performance.now();
+  killTweens("shake" + slotId);
+  const shakeT = {
+    obj:null,prop:null,from:0,to:0,dur:shakeDur,elapsed:0,ease:linear,
+    onDone:()=>{sa.shakeX=0;sa.outlineFlash=0;},
+    tag:"shake"+slotId,done:false
+  };
+  shakeT._custom = true; shakeT._sa = sa; shakeT._startTime = startTime;
+  tweens.push(shakeT);
+  sa.outlineFlash = 0.7;
+}
+
+function updateShakeTweens(now) {
+  for (const t of tweens) {
+    if (!t._custom) continue;
+    const elapsed = now - t._startTime;
+    if (elapsed < t.dur) {
+      const p = elapsed / t.dur;
+      t._sa.shakeX = 6 * Math.sin(p * Math.PI * 4) * (1 - p);
+      t._sa.outlineFlash = 0.7 * (1 - p);
+    }
+  }
+}
+
+function handleMouseMove(canvasX, canvasY) {
+  // Button hover for lobby
+  if (state.phase === "lobby") {
+    state.hoverCreate = pointInRect(canvasX, canvasY, BTN_CREATE);
+    state.hoverJoin = pointInRect(canvasX, canvasY, BTN_JOIN);
+    state.hoverHotSeat = pointInRect(canvasX, canvasY, BTN_HOTSEAT);
+    state.hoverHowTo = pointInRect(canvasX, canvasY, BTN_HOWTO);
+    return;
+  }
+  if (state.phase === "waiting" || state.phase === "joining") {
+    state.hoverBack = pointInRect(canvasX, canvasY, BTN_BACK);
+    return;
+  }
+  if (state.phase === "modeSelection") {
+    state.hoverRegular = pointInRect(canvasX, canvasY, BTN_REGULAR);
+    state.hoverHidden = pointInRect(canvasX, canvasY, BTN_HIDDEN);
+    // Back button (custom position for mode selection)
+    const modeBackBtn = { x: CX - 80, y: 400, w: 160, h: 40 };
+    state.hoverBack = pointInRect(canvasX, canvasY, modeBackBtn);
+    return;
+  }
+
+  if (state.phase !== "playing") { hoveredSlot = -1; return; }
+  const myIdx = Net.myIndex;
+  const isMyTurn = state.currentPlayer === myIdx;
+  if (!isMyTurn) { hoveredSlot = -1; return; }
+
+  const zoom = state.cameraZoom;
+  const adjX = CX + (canvasX - CX) / zoom;
+  const adjY = CY + (canvasY - CY) / zoom;
+
+  let newHover = -1;
+  for (let i = 0; i < 21; i++) {
+    const slot = SLOTS[i];
+    const sx = CX + slot.x, sy = CY + slot.y;
+    if (pointInTriPadded(adjX, adjY, sx, sy, S, slot.ori, 6)) {
+      if (state.board[i] == null) newHover = i;
+      break;
+    }
+  }
+
+  if (hoveredSlot >= 0 && hoveredSlot !== newHover) {
+    const sa = state.slotAnim[hoveredSlot];
+    addTween(sa, "hoverTint", sa.hoverTint, 0, 80, easeOut, null, "hover" + hoveredSlot);
+  }
+  if (newHover >= 0 && newHover !== hoveredSlot) {
+    state.slotAnim[newHover].hoverTint = 1;
+    killTweens("hover" + newHover);
+  }
+  hoveredSlot = newHover;
+}
+
+// Mouse/touch events
+canvas.addEventListener("click", (e) => {
+  const pos = screenToCanvas(e.clientX, e.clientY);
+  handleClick(pos.x, pos.y);
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  const pos = screenToCanvas(e.clientX, e.clientY);
+  handleMouseMove(pos.x, pos.y);
+});
+
+canvas.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    const pos = screenToCanvas(e.touches[0].clientX, e.touches[0].clientY);
+    handleClick(pos.x, pos.y);
+  }
+}, {passive: false});
+
+// Keyboard
+document.addEventListener("keydown", (e) => {
+  const key = e.key;
+
+  // Lobby: joining phase - text input
+  if (state.phase === "joining") {
+    if (key === "Backspace") {
+      state.joinCode = state.joinCode.slice(0, -1);
+      state.lobbyError = "";
+      return;
+    }
+    if (key === "Escape") {
+      state.phase = "lobby";
+      state.joinCode = "";
+      state.lobbyError = "";
+      return;
+    }
+    if (key === "Enter") {
+      if (state.joinCode.length === 4) {
+        Net.send({ type: "join_room", code: state.joinCode });
+      }
+      return;
+    }
+    // Accept alphanumeric chars
+    if (key.length === 1 && /[A-Za-z0-9]/.test(key) && state.joinCode.length < 4) {
+      state.joinCode += key.toUpperCase();
+      state.lobbyError = "";
+    }
+    return;
+  }
+
+  if (key === " " || key === "Enter") {
+    e.preventDefault();
+    if (state.phase === "roundResult") {
+      state.phase = "waitingAdvance";
+      Net.send({ type: "advance_round" });
+    } else if (state.phase === "gameOver") {
+      returnToLobby();
+    }
+  }
+
+  if (key === "r" || key === "R") {
+    if (state.phase === "playing" || state.phase === "roundResult" || state.phase === "gameOver" || state.phase === "waitingAdvance") {
+      returnToLobby();
+    }
+  }
+
+  if (key === "Escape") {
+    if (state.phase === "waiting") {
+      returnToLobby();
+    }
+  }
+});
+
+// ── Main Loop ──────────────────────────────────────────────────
+function frame(now) {
+  const dt = Math.min((now - prevTime) / 1000, 0.05);
+  prevTime = now;
+
+  updateTweens(dt * 1000);
+  updateShakeTweens(now);
+  updateSpecks(dt);
+  updateFloatLabels(dt);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(gDPR, 0, 0, gDPR, 0, 0);
+
+  // Always draw background
+  drawBackground(ctx);
+
+  // Game layers (only when in a game)
+  const inGame = ["playing", "roundResult", "waitingAdvance", "gameOver", "disconnected"].includes(state.phase);
+  if (inGame) {
+    drawBoard(ctx, now);
+    drawGFrame(ctx, now);
+    drawTrays(ctx, now);
+    drawHUD(ctx, now);
+    drawRoundResult(ctx);
+    drawGameOver(ctx);
+    drawGoldFlash(ctx);
+    drawToasts(ctx, dt * 1000);
+    drawDisconnected(ctx, dt);
+  }
+
+  // Lobby layers
+  drawLobby(ctx, now);
+  drawModeSelection(ctx);
+
+  requestAnimationFrame(frame);
+}
+
+// ── Init ───────────────────────────────────────────────────────
+Net.connect();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
