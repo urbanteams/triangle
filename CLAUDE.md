@@ -46,3 +46,65 @@ State machine drives the entire game loop. Two rounds per match; starting player
 - Animation timings are precisely specified in Section 12 (placement pop: 140ms, denied shake: 120ms, etc.)
 - Progressive intensity: visual effects escalate as board fills (milestones at 10, 15, 18, 20 placements)
 - End-of-round reveal sequence: ~900ms total with staggered highlights and floating score labels
+
+## Online Multiplayer Implementation
+
+### Two Versions
+- **`golden-triangle.html`**: Hot seat mode (local multiplayer, no network)
+- **`index.html`**: Online multiplayer using Firebase Realtime Database
+
+### Firebase Architecture
+Online multiplayer uses **Firebase Realtime Database** instead of a custom WebSocket server for simplicity:
+- No server deployment needed
+- Hosted on Google's infrastructure
+- Free tier: 1GB storage, 10GB/month bandwidth
+
+### Room Structure (Firebase)
+```
+rooms/
+  {ROOM_CODE}/
+    created: timestamp
+    gameMode: "regular" | "hidden"
+    firstPlayer: 0 | 1
+    players:
+      0: true | null    (White player)
+      1: true | null    (Black player)
+    status: "waiting" | "playing"
+    gameState/
+      placements/       (child_added listener)
+      roundResult/      (value listener)
+      roundStart/       (value listener)
+      gameOver/         (value listener)
+      advance_0: bool   (round advance acknowledgment)
+      advance_1: bool
+    actions/
+      select_0: value   (piece selection for player 0)
+      select_1: value
+```
+
+### Net Object (Firebase Adapter)
+The `Net` object in `index.html` acts as a Firebase adapter:
+- **`.createRoom(gameMode)`**: Creates room with 4-char code, sets up listeners
+- **`.joinRoom(code)`**: Joins existing room, sets up listeners
+- **`.placePiece(slotId, value)`**: Writes placement to Firebase, applies locally
+- **`.sendRoundResult()`**: Calculates golden slot & scores, writes to Firebase
+- **`.setupGameStateListeners()`**: Attaches Firebase listeners for opponent actions
+
+### Key Differences from Hot Seat
+1. **No direct function calls between players**: All communication via Firebase writes/reads
+2. **Asynchronous state sync**: Firebase listeners update game state when opponent acts
+3. **Round ending**: Player who places 20th piece calculates scores and broadcasts via Firebase
+4. **Disconnect handling**: Firebase presence listeners detect when opponent leaves
+5. **Dual application**: Placement written to Firebase AND applied locally to avoid lag
+
+### Critical Implementation Details
+- **Listener cleanup**: All Firebase listeners removed on `returnToLobby()` to prevent memory leaks
+- **Opponent filtering**: Placement listener ignores own placements (`placement.owner !== this.myIndex`)
+- **Phase-aware disconnect**: Only trigger "disconnected" state during active game phases, not during waiting
+- **Score calculation timing**: Golden slot and scores computed in `sendRoundResult()` before writing to Firebase (not pre-computed)
+- **Advance acknowledgment**: Both players must call `advanceRound()` before proceeding to round 2 or game over
+
+### Deployment
+- **Frontend**: Deployed to Vercel (static hosting)
+- **Backend**: Firebase Realtime Database (managed service)
+- **Configuration**: `firebase-config.js` contains Firebase project credentials
