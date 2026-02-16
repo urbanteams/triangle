@@ -3,14 +3,15 @@
 // Get this from: Firebase Console > Project Settings > Your apps > SDK setup and configuration
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyD5hUXQWbfI_g7HlAOoXckU_8lTTYQ5ZhY",
+  authDomain: "golden-triangle-da065.firebaseapp.com",
+  databaseURL: "https://golden-triangle-da065-default-rtdb.firebaseio.com",
+  projectId: "golden-triangle-da065",
+  storageBucket: "golden-triangle-da065.firebasestorage.app",
+  messagingSenderId: "986118922942",
+  appId: "1:986118922942:web:e50d5a36ec17860a5274ef"
 };
+
 
 // Initialize Firebase (will be used by index.html)
 if (typeof firebase !== 'undefined') {
