@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Golden Triangle</title>
+<link href="https://fonts.googleapis.com/css2?family=Federo&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;user-select:none;-webkit-user-select:none}
@@ -276,7 +277,7 @@ function updateSpecks(dt) {
 // ── Game State ─────────────────────────────────────────────────
 function freshState() {
   return {
-    phase: "menu", // menu, playing, paused, roundResult, gameOver
+    phase: "menu", // menu, playing, roundResult, gameOver, confirm
     round: 1,
     turnCount: 0,
     currentPlayer: 0, // 0=white, 1=black
@@ -307,7 +308,13 @@ function freshState() {
     // progressive intensity overrides
     outlineBrighten: 0,
     vignette: 0,
-    gframeGlow: 0
+    gframeGlow: 0,
+    // confirmation dialog state
+    confirmAction: null, // "restart" or "home"
+    hoverYes: false,
+    hoverNo: false,
+    hoverRestart: false,
+    hoverHome: false
   };
 }
 
@@ -663,7 +670,7 @@ function drawTrays(ctx, now) {
 
 // ── HUD ────────────────────────────────────────────────────────
 function drawHUD(ctx, now) {
-  if (state.phase !== "playing" && state.phase !== "paused" && state.phase !== "menuTransition") return;
+  if (state.phase !== "playing" && state.phase !== "menuTransition") return;
 
   // Turn indicator
   const playerName = state.currentPlayer === 0 ? "White" : "Black";
@@ -691,11 +698,28 @@ function drawHUD(ctx, now) {
   ctx.fillStyle = "#999";
   ctx.fillText(`Black: ${state.scores[1]}`, W - 20, 16);
 
-  // Controls hint
+  // Restart and Home buttons
+  const restartBtn = {x: W - 140, y: H - 40, w: 60, h: 26};
+  const homeBtn = {x: W - 70, y: H - 40, w: 50, h: 26};
+
+  // Restart button
+  roundRect(ctx, restartBtn.x, restartBtn.y, restartBtn.w, restartBtn.h, 4);
+  ctx.fillStyle = state.hoverRestart ? "#3A3A3A" : "#2A2A2A";
+  ctx.fill();
+  ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
   ctx.font = "12px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#667";
-  ctx.fillText("Tap piece → tap slot  |  P: Pause  |  R: Restart", CX, H - 16);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#AAB";
+  ctx.fillText("Restart", restartBtn.x + restartBtn.w/2, restartBtn.y + restartBtn.h/2);
+
+  // Home button
+  roundRect(ctx, homeBtn.x, homeBtn.y, homeBtn.w, homeBtn.h, 4);
+  ctx.fillStyle = state.hoverHome ? "#3A3A3A" : "#2A2A2A";
+  ctx.fill();
+  ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = "12px sans-serif";
+  ctx.fillStyle = "#AAB";
+  ctx.fillText("Home", homeBtn.x + homeBtn.w/2, homeBtn.y + homeBtn.h/2);
 
   ctx.restore();
 }
@@ -733,51 +757,70 @@ function drawMenu(ctx) {
   ctx.fillRect(0, 0, W, H);
 
   // Title
-  ctx.font = "bold 48px sans-serif";
+  ctx.font = "88px 'Federo', cursive";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.goldBase;
-  ctx.fillText("Golden Triangle", CX, 130 + slideY);
-
-  // Rules
-  ctx.font = "16px sans-serif";
-  ctx.fillStyle = "#CCD";
-  const rules = [
-    "Alternate placing numbered triangles (1-10).",
-    "After the last placement, the final empty slot becomes Gold.",
-    "Adjacent numbers score for their owners. Two rounds to win!"
-  ];
-  for (let i = 0; i < rules.length; i++) {
-    ctx.fillText(rules[i], CX, 200 + i * 26 + slideY);
-  }
-
-  // Controls
-  ctx.font = "14px sans-serif";
-  ctx.fillStyle = "#889";
-  ctx.fillText("Click/tap piece to select, then click/tap slot to place", CX, 310 + slideY);
-  ctx.fillText("P / Escape: Pause   |   R: Restart", CX, 334 + slideY);
+  ctx.fillText("Golden Triangle", CX, 200 + slideY);
 
   // Start prompt
   const blink = Math.sin(performance.now() / 500) > 0 ? 1 : 0.5;
   ctx.globalAlpha = state.menuAlpha * blink;
   ctx.font = "bold 22px sans-serif";
   ctx.fillStyle = COL.accent;
-  ctx.fillText("Press Space / Enter / Click to Start", CX, 410 + slideY);
+  ctx.fillText("Press Space / Enter / Click to Start", CX, 340 + slideY);
 
   ctx.restore();
 }
 
-function drawPause(ctx) {
-  if (state.phase !== "paused") return;
+function drawConfirmDialog(ctx) {
+  if (state.phase !== "confirm") return;
   ctx.save();
-  ctx.fillStyle = "rgba(10,14,20,0.6)";
+
+  // Dim backdrop
+  ctx.fillStyle = "rgba(10,14,20,0.7)";
   ctx.fillRect(0, 0, W, H);
-  ctx.font = "bold 40px sans-serif";
+
+  // Dialog box
+  const pw = 320, ph = 180;
+  const px = CX - pw/2, py = CY - ph/2;
+
+  roundRect(ctx, px, py, pw, ph, 12);
+  ctx.fillStyle = "rgba(30,36,48,0.95)";
+  ctx.fill();
+  ctx.strokeStyle = COL.accent;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Question
+  ctx.font = "bold 24px sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#DDE";
-  ctx.fillText("Paused", CX, CY - 20);
-  ctx.font = "16px sans-serif";
-  ctx.fillStyle = "#889";
-  ctx.fillText("P / Escape to resume  |  R to restart", CX, CY + 30);
+  ctx.fillText("Are you sure?", CX, py + 50);
+
+  // Yes button
+  const yesBtn = {x: CX - 80, y: py + 100, w: 60, h: 40};
+  roundRect(ctx, yesBtn.x, yesBtn.y, yesBtn.w, yesBtn.h, 8);
+  ctx.fillStyle = state.hoverYes ? "#4A5A4A" : "#3A4A3A";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverYes ? COL.accent : "#667";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillStyle = COL.accent;
+  ctx.fillText("Yes", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2);
+
+  // No button
+  const noBtn = {x: CX + 20, y: py + 100, w: 60, h: 40};
+  roundRect(ctx, noBtn.x, noBtn.y, noBtn.w, noBtn.h, 8);
+  ctx.fillStyle = state.hoverNo ? "#4A3A3A" : "#3A2A2A";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverNo ? COL.denied : "#667";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillStyle = state.hoverNo ? COL.denied : "#AAB";
+  ctx.fillText("No", noBtn.x + noBtn.w/2, noBtn.y + noBtn.h/2);
+
   ctx.restore();
 }
 
@@ -1122,15 +1165,44 @@ function updateFloatLabels(dt) {
 // ── Input Handling ─────────────────────────────────────────────
 let hoveredSlot = -1;
 
+function pointInRect(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
 function handleClick(canvasX, canvasY) {
+  // Confirmation dialog
+  if (state.phase === "confirm") {
+    const pw = 320, ph = 180;
+    const px = CX - pw/2, py = CY - ph/2;
+    const yesBtn = {x: CX - 80, y: py + 100, w: 60, h: 40};
+    const noBtn = {x: CX + 20, y: py + 100, w: 60, h: 40};
+
+    if (pointInRect(canvasX, canvasY, yesBtn)) {
+      // Execute the confirmed action
+      if (state.confirmAction === "restart") {
+        state = freshState();
+        tweens = [];
+        state.phase = "menu";
+      } else if (state.confirmAction === "home") {
+        window.location.href = "index.html";
+      }
+      return;
+    }
+
+    if (pointInRect(canvasX, canvasY, noBtn)) {
+      // Cancel - return to game
+      state.phase = "playing";
+      state.confirmAction = null;
+      return;
+    }
+    return;
+  }
+
   // Menu
   if (state.phase === "menu" || state.phase === "menuTransition") {
     if (state.phase === "menu") startMatch();
     return;
   }
-
-  // Paused - ignore
-  if (state.phase === "paused") return;
 
   // Round result
   if (state.phase === "roundResult") {
@@ -1144,7 +1216,25 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
-  // Playing
+  // Playing - check for button clicks
+  if (state.phase === "playing") {
+    const restartBtn = {x: W - 140, y: H - 40, w: 60, h: 26};
+    const homeBtn = {x: W - 70, y: H - 40, w: 50, h: 26};
+
+    if (pointInRect(canvasX, canvasY, restartBtn)) {
+      state.phase = "confirm";
+      state.confirmAction = "restart";
+      return;
+    }
+
+    if (pointInRect(canvasX, canvasY, homeBtn)) {
+      state.phase = "confirm";
+      state.confirmAction = "home";
+      return;
+    }
+  }
+
+  // Playing - game actions
   if (state.phase !== "playing") return;
 
   // Account for camera zoom
@@ -1244,35 +1334,60 @@ function updateShakeTweens(now) {
 }
 
 function handleMouseMove(canvasX, canvasY) {
-  if (state.phase !== "playing") { hoveredSlot = -1; return; }
+  // Confirmation dialog hovers
+  if (state.phase === "confirm") {
+    const pw = 320, ph = 180;
+    const px = CX - pw/2, py = CY - ph/2;
+    const yesBtn = {x: CX - 80, y: py + 100, w: 60, h: 40};
+    const noBtn = {x: CX + 20, y: py + 100, w: 60, h: 40};
 
-  const zoom = state.cameraZoom;
-  const adjX = CX + (canvasX - CX) / zoom;
-  const adjY = CY + (canvasY - CY) / zoom;
+    state.hoverYes = pointInRect(canvasX, canvasY, yesBtn);
+    state.hoverNo = pointInRect(canvasX, canvasY, noBtn);
+    hoveredSlot = -1;
+    return;
+  }
 
-  let newHover = -1;
-  for (let i = 0; i < 21; i++) {
-    const slot = SLOTS[i];
-    const sx = CX + slot.x, sy = CY + slot.y;
-    if (pointInTriPadded(adjX, adjY, sx, sy, S, slot.ori, 6)) {
-      if (state.board[i] == null) newHover = i;
-      break;
+  // Playing - button hovers
+  if (state.phase === "playing") {
+    const restartBtn = {x: W - 140, y: H - 40, w: 60, h: 26};
+    const homeBtn = {x: W - 70, y: H - 40, w: 50, h: 26};
+
+    state.hoverRestart = pointInRect(canvasX, canvasY, restartBtn);
+    state.hoverHome = pointInRect(canvasX, canvasY, homeBtn);
+
+    const zoom = state.cameraZoom;
+    const adjX = CX + (canvasX - CX) / zoom;
+    const adjY = CY + (canvasY - CY) / zoom;
+
+    let newHover = -1;
+    for (let i = 0; i < 21; i++) {
+      const slot = SLOTS[i];
+      const sx = CX + slot.x, sy = CY + slot.y;
+      if (pointInTriPadded(adjX, adjY, sx, sy, S, slot.ori, 6)) {
+        if (state.board[i] == null) newHover = i;
+        break;
+      }
     }
+
+    // Fade off previous hover
+    if (hoveredSlot >= 0 && hoveredSlot !== newHover) {
+      const sa = state.slotAnim[hoveredSlot];
+      addTween(sa, "hoverTint", sa.hoverTint, 0, 80, easeOut, null, "hover" + hoveredSlot);
+    }
+
+    // Instant on for new hover
+    if (newHover >= 0 && newHover !== hoveredSlot) {
+      state.slotAnim[newHover].hoverTint = 1;
+      killTweens("hover" + newHover);
+    }
+
+    hoveredSlot = newHover;
+    return;
   }
 
-  // Fade off previous hover
-  if (hoveredSlot >= 0 && hoveredSlot !== newHover) {
-    const sa = state.slotAnim[hoveredSlot];
-    addTween(sa, "hoverTint", sa.hoverTint, 0, 80, easeOut, null, "hover" + hoveredSlot);
-  }
-
-  // Instant on for new hover
-  if (newHover >= 0 && newHover !== hoveredSlot) {
-    state.slotAnim[newHover].hoverTint = 1;
-    killTweens("hover" + newHover);
-  }
-
-  hoveredSlot = newHover;
+  hoveredSlot = -1;
+  state.hoverRestart = false;
+  state.hoverHome = false;
 }
 
 // Mouse/touch events
@@ -1304,22 +1419,6 @@ document.addEventListener("keydown", (e) => {
     else if (state.phase === "roundResult") advanceFromRoundResult();
     else if (state.phase === "gameOver") startMatch();
   }
-
-  if (key === "r" || key === "R") {
-    if (["menu","menuTransition","playing","paused","gameOver","roundResult"].includes(state.phase)) {
-      state = freshState();
-      tweens = [];
-      state.phase = "menu";
-    }
-  }
-
-  if (key === "p" || key === "P" || key === "Escape") {
-    if (state.phase === "playing") {
-      state.phase = "paused";
-    } else if (state.phase === "paused") {
-      state.phase = "playing";
-    }
-  }
 });
 
 // ── Main Loop ──────────────────────────────────────────────────
@@ -1327,12 +1426,10 @@ function frame(now) {
   const dt = Math.min((now - prevTime) / 1000, 0.05);
   prevTime = now;
 
-  if (state.phase !== "paused") {
-    updateTweens(dt * 1000);
-    updateShakeTweens(now);
-    updateSpecks(dt);
-    updateFloatLabels(dt);
-  }
+  updateTweens(dt * 1000);
+  updateShakeTweens(now);
+  updateSpecks(dt);
+  updateFloatLabels(dt);
 
   // Clear at native resolution, then set logical coordinate transform
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1354,9 +1451,9 @@ function frame(now) {
   // 5. UI overlays
   drawHUD(ctx, now);
   drawMenu(ctx);
-  drawPause(ctx);
   drawRoundResult(ctx);
   drawGameOver(ctx);
+  drawConfirmDialog(ctx);
 
   // 6. Effects
   drawGoldFlash(ctx);

@@ -8,8 +8,21 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// Serve static files from parent directory (index.html, golden-triangle.html)
+// CORS headers for production (allows Vercel frontend to connect)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
+// Serve static files from parent directory (for local development)
 app.use(express.static(path.join(__dirname, "..")));
+
+// Health check endpoint for Railway
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", rooms: rooms.size });
+});
 
 const PORT = process.env.PORT || 3000;
 
