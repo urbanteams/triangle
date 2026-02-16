@@ -624,13 +624,9 @@ function beginRevealOnline(goldenSlot, roundScores, totalScores, round) {
   // Reveal hidden pieces first if in hidden mode
   if (state.gameMode === "hidden" && !state.hiddenPiecesRevealed) {
     state.hiddenPiecesRevealed = true;
-    // Brief pause to show revealed pieces (300ms)
-    setTimeout(() => {
-      continueRevealOnline(goldenSlot);
-    }, 300);
-  } else {
-    continueRevealOnline(goldenSlot);
   }
+  // Continue with golden triangle animation immediately
+  continueRevealOnline(goldenSlot);
 }
 
 function continueRevealOnline(goldenSlot) {
@@ -668,11 +664,11 @@ function continueRevealOnline(goldenSlot) {
     }, labelStart);
   });
 
-  // Show round result
+  // Show round result (3000ms delay)
   setTimeout(() => {
     state.phase = "roundResult";
     addTween(state, "resultScale", 0.96, 1.0, 180, easeOut, null, "result");
-  }, 900);
+  }, 3000);
 }
 
 function showOnlineGameOver(totalScores, winner) {
@@ -1178,7 +1174,7 @@ function drawLobby(c, now) {
 
     c.font = "bold 48px sans-serif";
     c.fillStyle = COL.white;
-    c.fillText(state.joinCode, CX, inputY + inputH/2);
+    c.fillText(state.joinCode, CX, inputY + inputH/2 + 3);
 
     // Cursor blink
     if (state.joinCode.length < 4) {
