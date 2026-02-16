@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Golden Triangle - Online</title>
 <link href="https://fonts.googleapis.com/css2?family=Federo&display=swap" rel="stylesheet">
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;user-select:none;-webkit-user-select:none}
@@ -189,106 +193,262 @@ function updateSpecks(dt) {
   }
 }
 
-// ── Network Layer ──────────────────────────────────────────────
-// PRODUCTION SERVER: Set this to your deployed Railway server URL
-// Example: "wss://golden-triangle-production.up.railway.app"
-const PRODUCTION_WS_URL = "REPLACE_WITH_YOUR_RAILWAY_URL";
-
+// ── Network Layer (Firebase) ───────────────────────────────────
 const Net = {
-  ws: null,
+  db: null,
   connected: false,
   myIndex: -1,    // 0=White, 1=Black
   roomCode: "",
+  roomRef: null,
+  listeners: [],
 
   connect() {
-    // Use production server if configured, otherwise use same host (for local development)
-    let wsUrl;
-    if (PRODUCTION_WS_URL && PRODUCTION_WS_URL !== "REPLACE_WITH_YOUR_RAILWAY_URL") {
-      wsUrl = PRODUCTION_WS_URL;
-    } else {
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      wsUrl = `${proto}//${location.host}`;
+    if (typeof firebase === 'undefined' || !window.db) {
+      console.error('Firebase not initialized. Check firebase-config.js');
+      state.lobbyError = "Firebase not configured";
+      return;
     }
+    this.db = window.db;
+    this.connected = true;
+  },
 
-    this.ws = new WebSocket(wsUrl);
-    this.ws.onopen = () => { this.connected = true; };
-    this.ws.onclose = () => {
-      this.connected = false;
-      // If we were in a game, show disconnect
-      if (state.phase === "playing" || state.phase === "roundResult" || state.phase === "waitingAdvance") {
-        state.phase = "disconnected";
-        state.disconnectTimer = 3000;
-      }
-    };
-    this.ws.onmessage = (e) => {
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
-      this.handleMessage(msg);
-    };
+  cleanup() {
+    // Remove all Firebase listeners
+    this.listeners.forEach(({ref, event, callback}) => {
+      ref.off(event, callback);
+    });
+    this.listeners = [];
+  },
+
+  listen(ref, event, callback) {
+    ref.on(event, callback);
+    this.listeners.push({ref, event, callback});
   },
 
   send(msg) {
-    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
+    // Firebase uses direct writes instead of sending messages
+    // This is handled in handleMessage equivalent
   },
 
-  handleMessage(msg) {
-    switch (msg.type) {
-      case "pong": break;
+  createRoom(gameMode) {
+    const code = this.generateRoomCode();
+    const firstPlayer = Math.random() < 0.5 ? 0 : 1;
 
-      case "room_created":
-        this.myIndex = msg.playerIndex;
-        this.roomCode = msg.code;
-        if (msg.gameMode) state.gameMode = msg.gameMode;
-        state.phase = "waiting";
-        state.lobbyError = "";
-        break;
+    const roomData = {
+      created: Date.now(),
+      gameMode: gameMode || "regular",
+      firstPlayer: firstPlayer,
+      players: { 0: true, 1: null }, // 0=creator present, 1=empty
+      gameState: null,
+      status: "waiting"
+    };
 
-      case "room_joined":
-        this.myIndex = msg.playerIndex;
-        this.roomCode = msg.code;
-        if (msg.gameMode) state.gameMode = msg.gameMode;
-        state.lobbyError = "";
-        break;
+    this.db.ref(`rooms/${code}`).set(roomData).then(() => {
+      this.roomCode = code;
+      this.myIndex = 0;
+      this.roomRef = this.db.ref(`rooms/${code}`);
+      state.phase = "waiting";
+      state.lobbyError = "";
+      state.gameMode = gameMode;
 
-      case "error":
-        state.lobbyError = msg.message;
-        break;
+      // Listen for player 2 joining
+      this.listen(this.roomRef.child('players/1'), 'value', (snapshot) => {
+        if (snapshot.val() === true && state.phase === "waiting") {
+          // Both players ready, start game
+          this.roomRef.update({status: 'playing'});
+          startOnlineMatch(firstPlayer);
+        }
+      });
 
-      case "game_start":
-        if (msg.gameMode) state.gameMode = msg.gameMode;
-        startOnlineMatch(msg.firstPlayer);
-        break;
+      // Listen for game state changes
+      this.setupGameStateListeners();
+    }).catch(err => {
+      state.lobbyError = "Failed to create room";
+      console.error(err);
+    });
+  },
 
-      case "opponent_selected":
-        state.opponentSelectedValue = msg.value;
-        break;
+  joinRoom(code) {
+    code = code.toUpperCase().trim();
+    const roomRef = this.db.ref(`rooms/${code}`);
 
-      case "piece_placed":
-        applyPlacement(msg.slotId, msg.value, msg.owner, msg.turnCount, msg.nextPlayer);
-        break;
+    roomRef.once('value').then(snapshot => {
+      if (!snapshot.exists()) {
+        state.lobbyError = "Room not found";
+        return;
+      }
 
-      case "round_result":
-        beginRevealOnline(msg.goldenSlot, msg.roundScores, msg.totalScores, msg.round);
-        break;
+      const room = snapshot.val();
+      if (room.players[1] === true) {
+        state.lobbyError = "Room is full";
+        return;
+      }
 
-      case "round_start":
-        startOnlineRound(msg.round, msg.firstPlayer);
-        break;
+      this.roomCode = code;
+      this.myIndex = 1;
+      this.roomRef = roomRef;
+      state.gameMode = room.gameMode;
+      state.lobbyError = "";
 
-      case "game_over":
-        showOnlineGameOver(msg.totalScores, msg.winner);
-        break;
+      // Join the room
+      roomRef.child('players/1').set(true).then(() => {
+        roomRef.update({status: 'playing'});
+        startOnlineMatch(room.firstPlayer);
+        this.setupGameStateListeners();
+      });
+    }).catch(err => {
+      state.lobbyError = "Failed to join room";
+      console.error(err);
+    });
+  },
 
-      case "opponent_disconnected":
+  setupGameStateListeners() {
+    // Listen for opponent's piece selection
+    const oppIndex = 1 - this.myIndex;
+    this.listen(this.roomRef.child(`actions/select_${oppIndex}`), 'value', (snapshot) => {
+      const value = snapshot.val();
+      if (value !== null) {
+        state.opponentSelectedValue = value;
+      }
+    });
+
+    // Listen for piece placements
+    this.listen(this.roomRef.child('gameState/placements'), 'child_added', (snapshot) => {
+      const placement = snapshot.val();
+      if (placement && placement.owner !== this.myIndex) {
+        applyPlacement(placement.slotId, placement.value, placement.owner,
+                      placement.turnCount, placement.nextPlayer);
+      }
+    });
+
+    // Listen for round results
+    this.listen(this.roomRef.child('gameState/roundResult'), 'value', (snapshot) => {
+      const result = snapshot.val();
+      if (result && state.phase === "playing") {
+        beginRevealOnline(result.goldenSlot, result.roundScores, result.totalScores, result.round);
+      }
+    });
+
+    // Listen for round start
+    this.listen(this.roomRef.child('gameState/roundStart'), 'value', (snapshot) => {
+      const data = snapshot.val();
+      if (data && state.phase === "waitingAdvance") {
+        startOnlineRound(data.round, data.firstPlayer);
+      }
+    });
+
+    // Listen for game over
+    this.listen(this.roomRef.child('gameState/gameOver'), 'value', (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        showOnlineGameOver(data.totalScores, data.winner);
+      }
+    });
+
+    // Listen for opponent disconnect
+    this.listen(this.roomRef.child(`players/${1 - this.myIndex}`), 'value', (snapshot) => {
+      if (snapshot.val() === null && state.phase !== "menu" && state.phase !== "lobby") {
         state.phase = "disconnected";
         state.disconnectTimer = 3000;
-        break;
+      }
+    });
+  },
+
+  selectPiece(value) {
+    if (this.roomRef) {
+      this.roomRef.child(`actions/select_${this.myIndex}`).set(value);
     }
+  },
+
+  placePiece(slotId, value) {
+    if (!this.roomRef) return;
+
+    const placement = {
+      slotId,
+      value,
+      owner: this.myIndex,
+      turnCount: state.turnCount + 1,
+      nextPlayer: state.turnCount === 19 ? -1 : (1 - state.currentPlayer),
+      timestamp: Date.now()
+    };
+
+    // Add to placements list
+    this.roomRef.child('gameState/placements').push(placement);
+
+    // Apply locally
+    applyPlacement(slotId, value, this.myIndex, placement.turnCount, placement.nextPlayer);
+
+    // Check if this is the 20th placement
+    if (placement.turnCount === 20) {
+      setTimeout(() => {
+        this.sendRoundResult();
+      }, 1200);
+    }
+  },
+
+  sendRoundResult() {
+    // Calculate scoring
+    const goldenSlot = state.goldenSlot;
+    const roundScores = state.roundScores;
+    const totalScores = state.scores;
+
+    this.roomRef.child('gameState/roundResult').set({
+      goldenSlot,
+      roundScores,
+      totalScores,
+      round: state.round,
+      timestamp: Date.now()
+    });
+  },
+
+  advanceRound() {
+    this.roomRef.child(`gameState/advance_${this.myIndex}`).set(true);
+
+    // Check if both players ready
+    this.roomRef.child('gameState').once('value').then(snapshot => {
+      const gs = snapshot.val();
+      if (gs && gs.advance_0 && gs.advance_1) {
+        // Both ready
+        if (state.round < 2) {
+          // Start round 2
+          this.roomRef.child('gameState').update({
+            roundStart: {
+              round: 2,
+              firstPlayer: 1 - state.firstPlayer,
+              timestamp: Date.now()
+            },
+            placements: null,
+            roundResult: null,
+            advance_0: null,
+            advance_1: null
+          });
+        } else {
+          // Game over
+          let winner = -1;
+          if (state.scores[0] > state.scores[1]) winner = 0;
+          else if (state.scores[1] > state.scores[0]) winner = 1;
+
+          this.roomRef.child('gameState/gameOver').set({
+            totalScores: state.scores,
+            winner,
+            timestamp: Date.now()
+          });
+        }
+      }
+    });
+  },
+
+  generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 4; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return code;
   }
 };
 
-// Keep-alive
-setInterval(() => { Net.send({ type: "ping" }); }, 30000);
+// Firebase keeps connections alive automatically
 
 // ── Game State ─────────────────────────────────────────────────
 function freshState() {
@@ -502,10 +662,14 @@ function showOnlineGameOver(totalScores, winner) {
 }
 
 function returnToLobby() {
-  // Reconnect WebSocket if closed
-  if (!Net.connected) Net.connect();
+  // Clean up Firebase listeners
+  Net.cleanup();
+  if (Net.roomRef && Net.myIndex >= 0) {
+    Net.roomRef.child(`players/${Net.myIndex}`).set(null);
+  }
   Net.myIndex = -1;
   Net.roomCode = "";
+  Net.roomRef = null;
   state = freshState();
   tweens = [];
 }
@@ -1269,13 +1433,13 @@ function handleClick(canvasX, canvasY) {
     if (pointInRect(canvasX, canvasY, BTN_REGULAR)) {
       playPlaceClick();
       state.gameMode = "regular";
-      Net.send({ type: "create_room", gameMode: "regular" });
+      Net.createRoom("regular");
       return;
     }
     if (pointInRect(canvasX, canvasY, BTN_HIDDEN)) {
       playPlaceClick();
       state.gameMode = "hidden";
-      Net.send({ type: "create_room", gameMode: "hidden" });
+      Net.createRoom("hidden");
       return;
     }
     // Back button (custom position for mode selection)
@@ -1308,7 +1472,7 @@ function handleClick(canvasX, canvasY) {
   // Round result - advance
   if (state.phase === "roundResult") {
     state.phase = "waitingAdvance";
-    Net.send({ type: "advance_round" });
+    Net.advanceRound();
     return;
   }
 
@@ -1353,10 +1517,10 @@ function handleClick(canvasX, canvasY) {
 
         if (state.selectedPiece && state.selectedPiece.value === p.value && state.selectedPiece.owner === owner) {
           state.selectedPiece = null;
-          Net.send({ type: "select_piece", value: -1 });
+          Net.selectPiece(-1);
         } else {
           state.selectedPiece = { owner, value: p.value };
-          Net.send({ type: "select_piece", value: p.value });
+          Net.selectPiece(p.value);
         }
         return;
       }
@@ -1376,8 +1540,8 @@ function handleClick(canvasX, canvasY) {
       if (state.board[i] != null) { denySlot(i); return; }
       if (!state.selectedPiece) { denySlot(i); return; }
 
-      // Send to server for validation
-      Net.send({ type: "place_piece", slotId: i, value: state.selectedPiece.value });
+      // Place piece via Firebase
+      Net.placePiece(i, state.selectedPiece.value);
       return;
     }
   }
@@ -1500,7 +1664,7 @@ document.addEventListener("keydown", (e) => {
     }
     if (key === "Enter") {
       if (state.joinCode.length === 4) {
-        Net.send({ type: "join_room", code: state.joinCode });
+        Net.joinRoom(state.joinCode);
       }
       return;
     }

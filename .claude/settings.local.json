@@ -6,7 +6,22 @@
       "Bash(where:*)",
       "Bash(git --version:*)",
       "Bash(git -C /c/Users/ocean/.claude/projects/triangle/ init)",
-      "Bash(git -C /c/Users/ocean/.claude/projects/triangle/ add .gitignore CLAUDE.md firstdraft.md golden-triangle.html triangle.md .claude)"
+      "Bash(git -C /c/Users/ocean/.claude/projects/triangle/ add .gitignore CLAUDE.md firstdraft.md golden-triangle.html triangle.md .claude)",
+      "Bash(git -C:*)",
+      "Bash(npm install:*)",
+      "Bash(timeout 5 node:*)",
+      "Bash(PORT=3001 timeout 3 node:*)",
+      "Bash(npm run install-server:*)",
+      "Bash(timeout 3 npm start:*)",
+      "Bash(git checkout:*)",
+      "Bash(npm start)",
+      "Bash(git add:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(python -m http.server:*)",
+      "Bash(PORT=8000 npm start:*)",
+      "Bash(git restore:*)"
     ]
   }
 }
