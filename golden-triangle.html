@@ -7,20 +7,20 @@
 <link href="https://fonts.googleapis.com/css2?family=Federo&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#000;user-select:none;-webkit-user-select:none}
-canvas{display:block;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+html,body{width:100%;height:100%;overflow:hidden;background:#1B202A;user-select:none;-webkit-user-select:none}
+canvas{display:block;position:absolute;width:100%;height:100%}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <script>
 "use strict";
-// ── Constants ──────────────────────────────────────────────────
-const W = 960, H = 540;
-const CX = 480, CY = 270; // board center
-const S = 66; // triangle side
-const TH = S * 0.8660254; // triangle height
-const PIECE_S = 62; // piece render side (slightly smaller than slot)
+// ── Dynamic Game Dimensions ────────────────────────────────────
+let W = 960, H = 540;
+let CX = 480, CY = 270; // board center
+let S = 66; // triangle side
+let TH = S * 0.8660254; // triangle height
+let PIECE_S = 62; // piece render side (slightly smaller than slot)
 
 // Colors
 const COL = {
@@ -100,37 +100,42 @@ function playPlaceClick() {
 // (offset by TH/3 ≈ 20.78) so their edges actually align.
 // ↑ centroid is at y_band + 2*TH/3, ↓ centroid is at y_band + TH/3
 // Board is vertically centered by offsetting -2*TH from the top.
-const T3 = TH / 3;   // ≈ 20.78
-const T23 = 2*TH / 3;
-const HS = S / 2;  // half side length
+let T3 = TH / 3;   // ≈ 20.78
+let T23 = 2*TH / 3;
+let HS = S / 2;  // half side length
 
-const SLOTS = [
-  // Band 0 (top, 5 slots): ↑ ↓ ↑ ↓ ↑
-  {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
-  {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
-  {id:2,  x:  0,   y:-4*T3, ori:"up"},
-  {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
-  {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
-  // Band 1 (7 slots): ↑ ↓ ↑ ↓ ↑ ↓ ↑
-  {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
-  {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
-  {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
-  {id:8,  x:  0,   y:-2*T3, ori:"down"},
-  {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
-  {id:10, x: 2*HS, y:-2*T3, ori:"down"},
-  {id:11, x: 3*HS, y:-1*T3, ori:"up"},
-  // Band 2 (4 slots): ↓ ↑ ↓ ↑
-  {id:12, x:-3*HS, y: 1*T3, ori:"down"},
-  {id:13, x:-2*HS, y: 2*T3, ori:"up"},
-  {id:14, x:-1*HS, y: 1*T3, ori:"down"},
-  {id:15, x:  0,   y: 2*T3, ori:"up"},
-  // Band 3 (bottom, 5 slots): ↓ ↑ ↓ ↑ ↓
-  {id:16, x:-2*HS, y: 4*T3, ori:"down"},
-  {id:17, x:-1*HS, y: 5*T3, ori:"up"},
-  {id:18, x:  0,   y: 4*T3, ori:"down"},
-  {id:19, x: 1*HS, y: 5*T3, ori:"up"},
-  {id:20, x: 2*HS, y: 4*T3, ori:"down"}
-];
+let SLOTS = [];
+
+function updateSlots() {
+  SLOTS = [
+    // Band 0 (top, 5 slots): ↑ ↓ ↑ ↓ ↑
+    {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
+    {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
+    {id:2,  x:  0,   y:-4*T3, ori:"up"},
+    {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
+    {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
+    // Band 1 (7 slots): ↑ ↓ ↑ ↓ ↑ ↓ ↑
+    {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
+    {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
+    {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
+    {id:8,  x:  0,   y:-2*T3, ori:"down"},
+    {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
+    {id:10, x: 2*HS, y:-2*T3, ori:"down"},
+    {id:11, x: 3*HS, y:-1*T3, ori:"up"},
+    // Band 2 (4 slots): ↓ ↑ ↓ ↑
+    {id:12, x:-3*HS, y: 1*T3, ori:"down"},
+    {id:13, x:-2*HS, y: 2*T3, ori:"up"},
+    {id:14, x:-1*HS, y: 1*T3, ori:"down"},
+    {id:15, x:  0,   y: 2*T3, ori:"up"},
+    // Band 3 (bottom, 5 slots): ↓ ↑ ↓ ↑ ↓
+    {id:16, x:-2*HS, y: 4*T3, ori:"down"},
+    {id:17, x:-1*HS, y: 5*T3, ori:"up"},
+    {id:18, x:  0,   y: 4*T3, ori:"down"},
+    {id:19, x: 1*HS, y: 5*T3, ori:"up"},
+    {id:20, x: 2*HS, y: 4*T3, ori:"down"}
+  ];
+}
+updateSlots();
 
 // 24 edges total (17 within-band + 7 between-band)
 // Between-band: ↑ base on VRow N+1 matches ↓ top on same VRow
@@ -165,19 +170,96 @@ const ADJ = [
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
-let gScale = 1, gOffX = 0, gOffY = 0, gDPR = 1;
+let gDPR = 1;
+let TRAY_WHITE_CX, TRAY_BLACK_CX, TRAY_WHITE_CY, TRAY_BLACK_CY, TRAY_PIECE_S, TRAY_SPACEX, TRAY_SPACEY;
+
+// ── Background Specks ──────────────────────────────────────────
+const specks = [];
 
 function resize() {
   const ww = window.innerWidth, wh = window.innerHeight;
-  const s = Math.min(ww / W, wh / H);
   const dpr = window.devicePixelRatio || 1;
-  gScale = s;
-  gDPR = s * dpr;
-  canvas.style.width = (W * s) + "px";
-  canvas.style.height = (H * s) + "px";
-  canvas.width = Math.round(W * s * dpr);
-  canvas.height = Math.round(H * s * dpr);
-  gOffX = 0; gOffY = 0;
+
+  canvas.width = Math.round(ww * dpr);
+  canvas.height = Math.round(wh * dpr);
+  gDPR = dpr;
+
+  W = ww;
+  H = wh;
+  CX = W / 2;
+
+  const hudH = Math.max(50, H * 0.065);
+  const buttonH = Math.max(35, H * 0.05);
+  const availH = H - hudH - buttonH;
+
+  // Board display height ≈ 6.5S (G-frame ~6.06S + padding)
+  const boardCoeff = 6.5;
+  const trayBlockCoeff = 1.44; // 2 rows × 0.72S spacing
+  const gapCoeff = 0.3;
+
+  // --- Wide layout: trays beside board (upper-left / upper-right) ---
+  const S_wide_vert = availH / boardCoeff;
+  const S_wide_horiz = W / 15.5; // board(7S) + 2×tray(~3.6S) + 2×gap(~0.65S)
+  const S_wide = Math.min(S_wide_vert, S_wide_horiz);
+
+  // --- Narrow layout: both trays side-by-side below board ---
+  const S_narrow_vert = availH / (boardCoeff + gapCoeff + trayBlockCoeff);
+  const S_narrow_horiz = (W * 0.95) / 8; // two trays side-by-side ≈ 8S wide
+  const S_narrow = Math.min(S_narrow_vert, S_narrow_horiz);
+
+  const useWide = S_wide >= S_narrow;
+  S = useWide ? S_wide : S_narrow;
+  S = Math.max(20, S);
+
+  TH = S * 0.8660254;
+  PIECE_S = S * 0.94;
+  T3 = TH / 3;
+  T23 = 2 * TH / 3;
+  HS = S / 2;
+
+  TRAY_PIECE_S = S * 0.58;
+  TRAY_SPACEX = S * 0.75;
+  TRAY_SPACEY = S * 0.72;
+
+  if (useWide) {
+    // Board centered vertically in available space
+    CY = hudH + availH / 2;
+    // Trays centered in the side margins, upper portion of board area
+    const sideMargin = (W - 7 * S) / 2;
+    TRAY_WHITE_CX = sideMargin / 2;
+    TRAY_BLACK_CX = W - sideMargin / 2;
+    TRAY_WHITE_CY = CY - S * 1.2;
+    TRAY_BLACK_CY = CY - S * 1.2;
+  } else {
+    // Board in upper portion, both trays side-by-side below
+    const boardDisplayH = boardCoeff * S;
+    const gap = gapCoeff * S;
+    const trayBlockH = trayBlockCoeff * S;
+    const contentH = boardDisplayH + gap + trayBlockH;
+    const contentTop = hudH + (availH - contentH) / 2;
+
+    CY = contentTop + boardDisplayH / 2;
+    const trayY = contentTop + boardDisplayH + gap + trayBlockH / 2;
+    TRAY_WHITE_CX = CX - S * 2.2;
+    TRAY_BLACK_CX = CX + S * 2.2;
+    TRAY_WHITE_CY = trayY;
+    TRAY_BLACK_CY = trayY;
+  }
+
+  updateSlots();
+
+  specks.length = 0;
+  const speckCount = Math.round((W * H) / 25000);
+  for (let i = 0; i < speckCount; i++) {
+    specks.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 8,
+      vy: (Math.random() - 0.5) * 8,
+      r: Math.random() * 1.5 + 0.5,
+      a: Math.random() * 0.3 + 0.1
+    });
+  }
 }
 window.addEventListener("resize", resize);
 resize();
@@ -185,8 +267,8 @@ resize();
 function screenToCanvas(sx, sy) {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: (sx - rect.left) / gScale,
-    y: (sy - rect.top) / gScale
+    x: (sx - rect.left) * (W / rect.width),
+    y: (sy - rect.top) * (H / rect.height)
   };
 }
 
@@ -256,16 +338,6 @@ function easeOut(t) { return 1 - (1-t)*(1-t); }
 function easeInOut(t) { return t < 0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
 function linear(t) { return t; }
 
-// ── Background Specks ──────────────────────────────────────────
-const specks = [];
-for (let i = 0; i < 20; i++) {
-  specks.push({
-    x: Math.random()*W, y: Math.random()*H,
-    vx: (Math.random()-0.5)*8, vy: (Math.random()-0.5)*8,
-    r: Math.random()*1.5+0.5, a: Math.random()*0.3+0.1
-  });
-}
-
 function updateSpecks(dt) {
   for (const s of specks) {
     s.x += s.vx * dt; s.y += s.vy * dt;
@@ -322,11 +394,7 @@ let state = freshState();
 let prevTime = performance.now();
 
 // ── Tray Layout ────────────────────────────────────────────────
-const TRAY_WHITE_CX = 150, TRAY_BLACK_CX = 810;
-const TRAY_WHITE_CY = 170, TRAY_BLACK_CY = 170;
-const TRAY_PIECE_S = 44; // smaller triangles for tray
 const TRAY_COLS = 5, TRAY_ROWS = 2;
-const TRAY_SPACEX = 52, TRAY_SPACEY = 56;
 
 function trayPiecePos(owner, index) {
   const baseCx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
@@ -395,8 +463,9 @@ function drawGFrame(ctx, now) {
   ctx.save();
   // The G-frame is a hex ring with upper-right gap + horizontal crossbar
   // Outer hex vertices (flat-top hex, relative to CX, CY)
-  const outerR = 232;
-  const innerR = 160;
+  // Scale the frame based on triangle size
+  const outerR = S * 3.5;
+  const innerR = S * 2.4;
   const thick = outerR - innerR;
 
   // 6 segments of the hex frame, with segment 1 (upper-right) removed for the G gap
@@ -491,7 +560,9 @@ function lerpColor(c1, c2, t) {
 
 // ── Background ─────────────────────────────────────────────────
 function drawBackground(ctx) {
-  const grd = ctx.createRadialGradient(CX, CY, 50, CX, CY, 500);
+  // Draw gradient across full canvas
+  const maxDim = Math.max(W, H);
+  const grd = ctx.createRadialGradient(CX, CY, 50, CX, CY, maxDim * 0.7);
   grd.addColorStop(0, COL.bgMid);
   grd.addColorStop(1, COL.bgDeep);
   ctx.fillStyle = grd;
@@ -499,7 +570,7 @@ function drawBackground(ctx) {
 
   // Extra vignette at high intensity
   if (state.vignette > 0) {
-    const vg = ctx.createRadialGradient(CX, CY, 100, CX, CY, 450);
+    const vg = ctx.createRadialGradient(CX, CY, 100, CX, CY, maxDim * 0.6);
     vg.addColorStop(0, "rgba(0,0,0,0)");
     vg.addColorStop(1, `rgba(0,0,0,${state.vignette * 0.3})`);
     ctx.fillStyle = vg;
@@ -561,9 +632,10 @@ function drawBoard(ctx, now) {
         COL.goldenBright, "#FFF5C0", COL.goldBase, COL.goldSh, null, sa.scale);
       // Gold star symbol
       ctx.save();
-      ctx.font = "bold 24px sans-serif";
+      const starSize = Math.max(14, PIECE_S * 0.38)|0;
+      ctx.font = `bold ${starSize}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      const off = slot.ori === "up" ? 4 : -4;
+      const off = slot.ori === "up" ? PIECE_S * 0.06 : -PIECE_S * 0.06;
       ctx.fillStyle = COL.goldSh;
       ctx.fillText("★", sx, sy + off);
       ctx.restore();
@@ -594,7 +666,7 @@ function drawBoard(ctx, now) {
     if (fl.alpha > 0) {
       ctx.save();
       ctx.globalAlpha = fl.alpha;
-      ctx.font = "bold 22px sans-serif";
+      ctx.font = `bold ${Math.max(16, S * 0.35)|0}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = fl.color;
       ctx.fillText(fl.text, CX + fl.x, CY + fl.y + fl.offsetY);
@@ -622,9 +694,7 @@ function drawTrays(ctx, now) {
       const pos = trayPiecePos(owner, i);
       const tIdx = owner * 10 + i;
 
-      // Idle breathing
-      const breathe = 1 + 0.02 * Math.sin(now / 1200 + i * 0.7);
-      let sc = breathe;
+      let sc = 1;
 
       // Selection state
       const isSelected = state.selectedPiece &&
@@ -658,11 +728,12 @@ function drawTrays(ctx, now) {
     // Tray label
     const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
     const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
-    ctx.font = "bold 14px sans-serif";
+    const labelSize = Math.max(11, TRAY_PIECE_S * 0.45)|0;
+    ctx.font = `bold ${labelSize}px sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const isActive = state.currentPlayer === owner && state.phase === "playing";
     ctx.fillStyle = isActive ? COL.accent : (owner === 0 ? "#AAA" : "#666");
-    ctx.fillText(owner === 0 ? "WHITE" : "BLACK", lx, ly - 55);
+    ctx.fillText(owner === 0 ? "WHITE" : "BLACK", lx, ly - TRAY_PIECE_S * 1.25);
   }
 
   ctx.restore();
@@ -672,42 +743,49 @@ function drawTrays(ctx, now) {
 function drawHUD(ctx, now) {
   if (state.phase !== "playing" && state.phase !== "menuTransition") return;
 
-  // Turn indicator
+  // Scale fonts based on window height
+  const baseFontSize = Math.max(12, H * 0.03);
+  const margin = Math.max(16, W * 0.02);
+
+  // Turn indicator (top center)
   const playerName = state.currentPlayer === 0 ? "White" : "Black";
   const pulseA = 0.6 + 0.4 * Math.sin(now / 400);
 
   ctx.save();
-  ctx.font = "bold 20px sans-serif";
+  ctx.font = `bold ${baseFontSize * 1.2}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "top";
   ctx.fillStyle = COL.accent;
   ctx.globalAlpha = pulseA;
-  ctx.fillText(`${playerName} to place`, CX, 16);
+  ctx.fillText(`${playerName} to place`, CX, margin);
   ctx.globalAlpha = 1;
 
-  // Round indicator
-  ctx.font = "16px sans-serif";
-  ctx.fillStyle = "#AAB";
-  ctx.fillText(`Round ${state.round}/2`, CX, 42);
-
-  // Scores
-  ctx.font = "bold 15px sans-serif";
+  // Round indicator (top left)
+  ctx.font = `${baseFontSize}px sans-serif`;
   ctx.textAlign = "left";
-  ctx.fillStyle = COL.white;
-  ctx.fillText(`White: ${state.scores[0]}`, 20, 16);
+  ctx.fillStyle = "#AAB";
+  ctx.fillText(`Round ${state.round}/2`, margin, margin);
+
+  // Scores (top right, stacked)
+  ctx.font = `bold ${baseFontSize}px sans-serif`;
   ctx.textAlign = "right";
+  ctx.fillStyle = COL.white;
+  ctx.fillText(`White: ${state.scores[0]}`, W - margin, margin);
   ctx.fillStyle = "#999";
-  ctx.fillText(`Black: ${state.scores[1]}`, W - 20, 16);
+  ctx.fillText(`Black: ${state.scores[1]}`, W - margin, margin + baseFontSize * 1.4);
 
   // Restart and Home buttons
-  const restartBtn = {x: W - 140, y: H - 40, w: 60, h: 26};
-  const homeBtn = {x: W - 70, y: H - 40, w: 50, h: 26};
+  const btnW = Math.max(50, W * 0.06);
+  const btnH = Math.max(24, H * 0.045);
+  const btnY = H - margin - btnH;
+  const restartBtn = {x: W - margin * 2 - btnW * 2, y: btnY, w: btnW, h: btnH};
+  const homeBtn = {x: W - margin - btnW, y: btnY, w: btnW, h: btnH};
 
   // Restart button
   roundRect(ctx, restartBtn.x, restartBtn.y, restartBtn.w, restartBtn.h, 4);
   ctx.fillStyle = state.hoverRestart ? "#3A3A3A" : "#2A2A2A";
   ctx.fill();
   ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
-  ctx.font = "12px sans-serif";
+  ctx.font = `${baseFontSize * 0.75}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#AAB";
   ctx.fillText("Restart", restartBtn.x + restartBtn.w/2, restartBtn.y + restartBtn.h/2);
@@ -717,7 +795,7 @@ function drawHUD(ctx, now) {
   ctx.fillStyle = state.hoverHome ? "#3A3A3A" : "#2A2A2A";
   ctx.fill();
   ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
-  ctx.font = "12px sans-serif";
+  ctx.font = `${baseFontSize * 0.75}px sans-serif`;
   ctx.fillStyle = "#AAB";
   ctx.fillText("Home", homeBtn.x + homeBtn.w/2, homeBtn.y + homeBtn.h/2);
 
@@ -737,7 +815,7 @@ function drawToasts(ctx, dt) {
     const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
     ctx.save();
     ctx.globalAlpha = Math.max(0, alpha);
-    ctx.font = "bold 18px sans-serif";
+    ctx.font = `bold ${Math.max(14, S * 0.3)|0}px sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = COL.goldenBright;
     ctx.fillText(t.text, CX, H - 60);
@@ -757,17 +835,19 @@ function drawMenu(ctx) {
   ctx.fillRect(0, 0, W, H);
 
   // Title
-  ctx.font = "88px 'Federo', cursive";
+  const titleSize = Math.max(40, Math.min(H * 0.16, 120));
+  ctx.font = `${titleSize}px 'Federo', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.goldBase;
-  ctx.fillText("Golden Triangle", CX, 200 + slideY);
+  ctx.fillText("Golden Triangle", CX, H * 0.37 + slideY);
 
   // Start prompt
   const blink = Math.sin(performance.now() / 500) > 0 ? 1 : 0.5;
   ctx.globalAlpha = state.menuAlpha * blink;
-  ctx.font = "bold 22px sans-serif";
+  const promptSize = Math.max(16, H * 0.04);
+  ctx.font = `bold ${promptSize}px sans-serif`;
   ctx.fillStyle = COL.accent;
-  ctx.fillText("Press Space / Enter / Click to Start", CX, 340 + slideY);
+  ctx.fillText("Press Space / Enter / Click to Start", CX, H * 0.63 + slideY);
 
   ctx.restore();
 }
@@ -781,7 +861,8 @@ function drawConfirmDialog(ctx) {
   ctx.fillRect(0, 0, W, H);
 
   // Dialog box
-  const pw = 320, ph = 180;
+  const pw = Math.max(250, W * 0.33);
+  const ph = Math.max(150, H * 0.33);
   const px = CX - pw/2, py = CY - ph/2;
 
   roundRect(ctx, px, py, pw, ph, 12);
@@ -792,32 +873,37 @@ function drawConfirmDialog(ctx) {
   ctx.stroke();
 
   // Question
-  ctx.font = "bold 24px sans-serif";
+  const questionSize = Math.max(18, H * 0.04);
+  ctx.font = `bold ${questionSize}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#DDE";
-  ctx.fillText("Are you sure?", CX, py + 50);
+  ctx.fillText("Are you sure?", CX, py + ph * 0.28);
 
   // Yes button
-  const yesBtn = {x: CX - 80, y: py + 100, w: 60, h: 40};
+  const btnW = Math.max(50, W * 0.06);
+  const btnH = Math.max(32, H * 0.06);
+  const btnY = py + ph * 0.56;
+  const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
   roundRect(ctx, yesBtn.x, yesBtn.y, yesBtn.w, yesBtn.h, 8);
   ctx.fillStyle = state.hoverYes ? "#4A5A4A" : "#3A4A3A";
   ctx.fill();
   ctx.strokeStyle = state.hoverYes ? COL.accent : "#667";
   ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.font = "bold 18px sans-serif";
+  const btnFontSize = Math.max(14, H * 0.033);
+  ctx.font = `bold ${btnFontSize}px sans-serif`;
   ctx.fillStyle = COL.accent;
   ctx.fillText("Yes", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2);
 
   // No button
-  const noBtn = {x: CX + 20, y: py + 100, w: 60, h: 40};
+  const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
   roundRect(ctx, noBtn.x, noBtn.y, noBtn.w, noBtn.h, 8);
   ctx.fillStyle = state.hoverNo ? "#4A3A3A" : "#3A2A2A";
   ctx.fill();
   ctx.strokeStyle = state.hoverNo ? COL.denied : "#667";
   ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.font = "bold 18px sans-serif";
+  ctx.font = `bold ${btnFontSize}px sans-serif`;
   ctx.fillStyle = state.hoverNo ? COL.denied : "#AAB";
   ctx.fillText("No", noBtn.x + noBtn.w/2, noBtn.y + noBtn.h/2);
 
@@ -838,7 +924,8 @@ function drawRoundResult(ctx) {
   ctx.scale(sc, sc);
   ctx.translate(-CX, -CY);
 
-  const pw = 360, ph = 240;
+  const pw = Math.max(280, W * 0.37);
+  const ph = Math.max(200, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
   ctx.fillStyle = "rgba(30,36,48,0.95)";
@@ -847,24 +934,29 @@ function drawRoundResult(ctx) {
   roundRect(ctx, px, py, pw, ph, 12);
   ctx.fill(); ctx.stroke();
 
-  ctx.font = "bold 24px sans-serif";
+  const titleSize = Math.max(18, H * 0.04);
+  const scoreSize = Math.max(22, H * 0.055);
+  const promptSize = Math.max(14, H * 0.033);
+
+  ctx.font = `bold ${titleSize}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.goldenBright;
-  ctx.fillText(`Round ${state.round} Results`, CX, py + 35);
+  ctx.fillText(`Round ${state.round} Results`, CX, py + titleSize * 2);
 
-  ctx.font = "bold 30px sans-serif";
+  ctx.font = `bold ${scoreSize}px sans-serif`;
   ctx.fillStyle = COL.white;
-  ctx.fillText(`White: ${state.roundScores[0]}`, CX, py + ph/2 - 15);
+  ctx.fillText(`White: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize/2);
   ctx.fillStyle = "#AAA";
-  ctx.fillText(`Black: ${state.roundScores[1]}`, CX, py + ph/2 + 25);
+  ctx.fillText(`Black: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize);
 
-  // Continue prompt
+  // Continue prompt (same distance from bottom as title from top)
+  const promptSize2 = Math.max(13, H * 0.022);
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   ctx.globalAlpha = blink;
-  ctx.font = "bold 18px sans-serif";
+  ctx.font = `${promptSize2}px sans-serif`;
   ctx.fillStyle = COL.accent;
   const contText = state.round < 2 ? "Space / Enter / Click: Next Round" : "Space / Enter / Click: View Winner";
-  ctx.fillText(contText, CX, py + ph - 30);
+  ctx.fillText(contText, CX, py + ph - titleSize * 2);
   ctx.globalAlpha = 1;
 
   ctx.restore();
@@ -877,7 +969,8 @@ function drawGameOver(ctx) {
   ctx.fillStyle = "rgba(10,14,20,0.7)";
   ctx.fillRect(0, 0, W, H);
 
-  const pw = 360, ph = 240;
+  const pw = Math.max(280, W * 0.37);
+  const ph = Math.max(200, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
   ctx.fillStyle = "rgba(30,36,48,0.95)";
@@ -892,24 +985,28 @@ function drawGameOver(ctx) {
   else if (state.scores[1] > state.scores[0]) winner = "Black Wins!";
   else winner = "Draw!";
 
-  ctx.font = "bold 24px sans-serif";
+  const titleSize = Math.max(18, H * 0.04);
+  const scoreSize = Math.max(22, H * 0.055);
+
+  ctx.font = `bold ${titleSize}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.goldenBright;
-  ctx.fillText(winner, CX, py + 35);
+  ctx.fillText(winner, CX, py + titleSize * 2);
 
   // Final scores large and centered
-  ctx.font = "bold 30px sans-serif";
+  ctx.font = `bold ${scoreSize}px sans-serif`;
   ctx.fillStyle = COL.white;
-  ctx.fillText(`White: ${state.scores[0]}`, CX, py + ph/2 - 15);
+  ctx.fillText(`White: ${state.scores[0]}`, CX, py + ph/2 - scoreSize/2);
   ctx.fillStyle = "#AAA";
-  ctx.fillText(`Black: ${state.scores[1]}`, CX, py + ph/2 + 25);
+  ctx.fillText(`Black: ${state.scores[1]}`, CX, py + ph/2 + scoreSize);
 
-  // Continue
+  // Continue (same distance from bottom as title from top)
+  const promptSize2 = Math.max(13, H * 0.022);
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   ctx.globalAlpha = blink;
-  ctx.font = "bold 18px sans-serif";
+  ctx.font = `${promptSize2}px sans-serif`;
   ctx.fillStyle = COL.accent;
-  ctx.fillText("Space / Enter / Click to Play Again", CX, py + ph - 25);
+  ctx.fillText("Space / Enter / Click to Play Again", CX, py + ph - titleSize * 2);
   ctx.globalAlpha = 1;
 
   ctx.restore();
@@ -1172,10 +1269,14 @@ function pointInRect(px, py, r) {
 function handleClick(canvasX, canvasY) {
   // Confirmation dialog
   if (state.phase === "confirm") {
-    const pw = 320, ph = 180;
+    const pw = Math.max(250, W * 0.33);
+    const ph = Math.max(150, H * 0.33);
     const px = CX - pw/2, py = CY - ph/2;
-    const yesBtn = {x: CX - 80, y: py + 100, w: 60, h: 40};
-    const noBtn = {x: CX + 20, y: py + 100, w: 60, h: 40};
+    const btnW = Math.max(50, W * 0.06);
+    const btnH = Math.max(32, H * 0.06);
+    const btnY = py + ph * 0.56;
+    const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
+    const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
 
     if (pointInRect(canvasX, canvasY, yesBtn)) {
       // Execute the confirmed action
@@ -1183,6 +1284,7 @@ function handleClick(canvasX, canvasY) {
         state = freshState();
         tweens = [];
         state.phase = "menu";
+        resize(); // Recalculate dimensions on restart
       } else if (state.confirmAction === "home") {
         window.location.href = "index.html";
       }
@@ -1218,8 +1320,12 @@ function handleClick(canvasX, canvasY) {
 
   // Playing - check for button clicks
   if (state.phase === "playing") {
-    const restartBtn = {x: W - 140, y: H - 40, w: 60, h: 26};
-    const homeBtn = {x: W - 70, y: H - 40, w: 50, h: 26};
+    const margin = Math.max(16, W * 0.02);
+    const btnW = Math.max(50, W * 0.06);
+    const btnH = Math.max(24, H * 0.045);
+    const btnY = H - margin - btnH;
+    const restartBtn = {x: W - margin * 2 - btnW * 2, y: btnY, w: btnW, h: btnH};
+    const homeBtn = {x: W - margin - btnW, y: btnY, w: btnW, h: btnH};
 
     if (pointInRect(canvasX, canvasY, restartBtn)) {
       state.phase = "confirm";
@@ -1336,10 +1442,14 @@ function updateShakeTweens(now) {
 function handleMouseMove(canvasX, canvasY) {
   // Confirmation dialog hovers
   if (state.phase === "confirm") {
-    const pw = 320, ph = 180;
+    const pw = Math.max(250, W * 0.33);
+    const ph = Math.max(150, H * 0.33);
     const px = CX - pw/2, py = CY - ph/2;
-    const yesBtn = {x: CX - 80, y: py + 100, w: 60, h: 40};
-    const noBtn = {x: CX + 20, y: py + 100, w: 60, h: 40};
+    const btnW = Math.max(50, W * 0.06);
+    const btnH = Math.max(32, H * 0.06);
+    const btnY = py + ph * 0.56;
+    const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
+    const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
 
     state.hoverYes = pointInRect(canvasX, canvasY, yesBtn);
     state.hoverNo = pointInRect(canvasX, canvasY, noBtn);
@@ -1349,8 +1459,12 @@ function handleMouseMove(canvasX, canvasY) {
 
   // Playing - button hovers
   if (state.phase === "playing") {
-    const restartBtn = {x: W - 140, y: H - 40, w: 60, h: 26};
-    const homeBtn = {x: W - 70, y: H - 40, w: 50, h: 26};
+    const margin = Math.max(16, W * 0.02);
+    const btnW = Math.max(50, W * 0.06);
+    const btnH = Math.max(24, H * 0.045);
+    const btnY = H - margin - btnH;
+    const restartBtn = {x: W - margin * 2 - btnW * 2, y: btnY, w: btnW, h: btnH};
+    const homeBtn = {x: W - margin - btnW, y: btnY, w: btnW, h: btnH};
 
     state.hoverRestart = pointInRect(canvasX, canvasY, restartBtn);
     state.hoverHome = pointInRect(canvasX, canvasY, homeBtn);
