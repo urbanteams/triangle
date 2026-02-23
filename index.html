@@ -11,20 +11,20 @@
 <script src="firebase-config.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#000;user-select:none;-webkit-user-select:none}
-canvas{display:block;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+html,body{width:100%;height:100%;overflow:hidden;background:#1B202A;user-select:none;-webkit-user-select:none}
+canvas{display:block;position:absolute;width:100%;height:100%}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <script>
 "use strict";
-// ── Constants ──────────────────────────────────────────────────
-const W = 960, H = 540;
-const CX = 480, CY = 270;
-const S = 66;
-const TH = S * 0.8660254;
-const PIECE_S = 62;
+// ── Dynamic Game Dimensions ────────────────────────────────────
+let W = 960, H = 540;
+let CX = 480, CY = 270;
+let S = 66;
+let TH = S * 0.8660254;
+let PIECE_S = 62;
 
 const COL = {
   bgDeep: "#1B202A", bgMid: "#2B3340",
@@ -75,33 +75,37 @@ function playPlaceClick() {
 }
 
 // ── Slot Definitions ───────────────────────────────────────────
-const T3 = TH / 3;
-const T23 = 2*TH / 3;
-const HS = S / 2;
+let T3 = TH / 3;
+let T23 = 2*TH / 3;
+let HS = S / 2;
 
-const SLOTS = [
-  {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
-  {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
-  {id:2,  x:  0,   y:-4*T3, ori:"up"},
-  {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
-  {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
-  {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
-  {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
-  {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
-  {id:8,  x:  0,   y:-2*T3, ori:"down"},
-  {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
-  {id:10, x: 2*HS, y:-2*T3, ori:"down"},
-  {id:11, x: 3*HS, y:-1*T3, ori:"up"},
-  {id:12, x:-3*HS, y: 1*T3, ori:"down"},
-  {id:13, x:-2*HS, y: 2*T3, ori:"up"},
-  {id:14, x:-1*HS, y: 1*T3, ori:"down"},
-  {id:15, x:  0,   y: 2*T3, ori:"up"},
-  {id:16, x:-2*HS, y: 4*T3, ori:"down"},
-  {id:17, x:-1*HS, y: 5*T3, ori:"up"},
-  {id:18, x:  0,   y: 4*T3, ori:"down"},
-  {id:19, x: 1*HS, y: 5*T3, ori:"up"},
-  {id:20, x: 2*HS, y: 4*T3, ori:"down"}
-];
+let SLOTS = [];
+function updateSlots() {
+  SLOTS = [
+    {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
+    {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
+    {id:2,  x:  0,   y:-4*T3, ori:"up"},
+    {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
+    {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
+    {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
+    {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
+    {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
+    {id:8,  x:  0,   y:-2*T3, ori:"down"},
+    {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
+    {id:10, x: 2*HS, y:-2*T3, ori:"down"},
+    {id:11, x: 3*HS, y:-1*T3, ori:"up"},
+    {id:12, x:-3*HS, y: 1*T3, ori:"down"},
+    {id:13, x:-2*HS, y: 2*T3, ori:"up"},
+    {id:14, x:-1*HS, y: 1*T3, ori:"down"},
+    {id:15, x:  0,   y: 2*T3, ori:"up"},
+    {id:16, x:-2*HS, y: 4*T3, ori:"down"},
+    {id:17, x:-1*HS, y: 5*T3, ori:"up"},
+    {id:18, x:  0,   y: 4*T3, ori:"down"},
+    {id:19, x: 1*HS, y: 5*T3, ori:"up"},
+    {id:20, x: 2*HS, y: 4*T3, ori:"down"}
+  ];
+}
+updateSlots();
 
 const ADJ = [
   [1, 6],       [0, 2],       [1, 3, 8],    [2, 4],       [3, 10],
@@ -114,24 +118,90 @@ const ADJ = [
 // ── Canvas Setup ───────────────────────────────────────────────
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
-let gScale = 1, gOffX = 0, gOffY = 0, gDPR = 1;
+let gDPR = 1;
+let TRAY_WHITE_CX, TRAY_BLACK_CX, TRAY_WHITE_CY, TRAY_BLACK_CY, TRAY_PIECE_S, TRAY_SPACEX, TRAY_SPACEY;
+
+// ── Background Specks ──────────────────────────────────────────
+const specks = [];
 
 function resize() {
   const ww = window.innerWidth, wh = window.innerHeight;
-  const s = Math.min(ww / W, wh / H);
   const dpr = window.devicePixelRatio || 1;
-  gScale = s; gDPR = s * dpr;
-  canvas.style.width = (W * s) + "px";
-  canvas.style.height = (H * s) + "px";
-  canvas.width = Math.round(W * s * dpr);
-  canvas.height = Math.round(H * s * dpr);
+
+  canvas.width = Math.round(ww * dpr);
+  canvas.height = Math.round(wh * dpr);
+  gDPR = dpr;
+
+  W = ww;
+  H = wh;
+  CX = W / 2;
+
+  const hudH = Math.max(50, H * 0.065);
+  const buttonH = Math.max(35, H * 0.05);
+  const availH = H - hudH - buttonH;
+
+  const boardCoeff = 6.5;
+  const trayBlockCoeff = 1.44;
+  const gapCoeff = 0.3;
+
+  const S_wide_vert = availH / boardCoeff;
+  const S_wide_horiz = W / 15.5;
+  const S_wide = Math.min(S_wide_vert, S_wide_horiz);
+
+  const S_narrow_vert = availH / (boardCoeff + gapCoeff + trayBlockCoeff);
+  const S_narrow_horiz = (W * 0.95) / 8;
+  const S_narrow = Math.min(S_narrow_vert, S_narrow_horiz);
+
+  const useWide = S_wide >= S_narrow;
+  S = useWide ? S_wide : S_narrow;
+  S = Math.max(20, S);
+
+  TH = S * 0.8660254;
+  PIECE_S = S * 0.94;
+  T3 = TH / 3;
+  T23 = 2 * TH / 3;
+  HS = S / 2;
+
+  TRAY_PIECE_S = S * 0.58;
+  TRAY_SPACEX = S * 0.75;
+  TRAY_SPACEY = S * 0.72;
+
+  if (useWide) {
+    CY = hudH + availH / 2;
+    const sideMargin = (W - 7 * S) / 2;
+    TRAY_WHITE_CX = sideMargin / 2;
+    TRAY_BLACK_CX = W - sideMargin / 2;
+    TRAY_WHITE_CY = CY - S * 1.2;
+    TRAY_BLACK_CY = CY - S * 1.2;
+  } else {
+    const boardDisplayH = boardCoeff * S;
+    const gap = gapCoeff * S;
+    const trayBlockH = trayBlockCoeff * S;
+    const contentH = boardDisplayH + gap + trayBlockH;
+    const contentTop = hudH + (availH - contentH) / 2;
+
+    CY = contentTop + boardDisplayH / 2;
+    const trayY = contentTop + boardDisplayH + gap + trayBlockH / 2;
+    TRAY_WHITE_CX = CX - S * 2.2;
+    TRAY_BLACK_CX = CX + S * 2.2;
+    TRAY_WHITE_CY = trayY;
+    TRAY_BLACK_CY = trayY;
+  }
+
+  updateSlots();
+
+  specks.length = 0;
+  const speckCount = Math.round((W * H) / 25000);
+  for (let i = 0; i < speckCount; i++) {
+    specks.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8,r:Math.random()*1.5+0.5,a:Math.random()*0.3+0.1});
+  }
 }
 window.addEventListener("resize", resize);
 resize();
 
 function screenToCanvas(sx, sy) {
   const rect = canvas.getBoundingClientRect();
-  return { x: (sx - rect.left) / gScale, y: (sy - rect.top) / gScale };
+  return { x: (sx - rect.left) * (W / rect.width), y: (sy - rect.top) * (H / rect.height) };
 }
 
 // ── Triangle Geometry Helpers ──────────────────────────────────
@@ -181,11 +251,6 @@ function easeOut(t) { return 1-(1-t)*(1-t); }
 function easeInOut(t) { return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; }
 function linear(t) { return t; }
 
-// ── Background Specks ──────────────────────────────────────────
-const specks = [];
-for (let i = 0; i < 20; i++) {
-  specks.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8,r:Math.random()*1.5+0.5,a:Math.random()*0.3+0.1});
-}
 function updateSpecks(dt) {
   for (const s of specks) {
     s.x+=s.vx*dt; s.y+=s.vy*dt;
@@ -691,11 +756,7 @@ function returnToLobby() {
 }
 
 // ── Tray Layout ────────────────────────────────────────────────
-const TRAY_WHITE_CX = 150, TRAY_BLACK_CX = 810;
-const TRAY_WHITE_CY = 170, TRAY_BLACK_CY = 170;
-const TRAY_PIECE_S = 44;
 const TRAY_COLS = 5, TRAY_ROWS = 2;
-const TRAY_SPACEX = 52, TRAY_SPACEY = 56;
 
 function trayPiecePos(owner, index) {
   const baseCx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
@@ -769,7 +830,7 @@ function drawBevelTri(c, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, lab
 // ── G-Frame ────────────────────────────────────────────────────
 function drawGFrame(c, now) {
   c.save();
-  const outerR = 232, innerR = 160;
+  const outerR = S * 3.5, innerR = S * 2.4;
   function hexPt(r, a) { const rad=a*Math.PI/180; return {x:CX+r*Math.cos(rad),y:CY+r*Math.sin(rad)}; }
   const angles = [0,60,120,180,240,300];
   const outerPts = angles.map(a => hexPt(outerR, a));
@@ -816,11 +877,12 @@ function lerpColor(c1,c2,t) {
 
 // ── Background ─────────────────────────────────────────────────
 function drawBackground(c) {
-  const grd = c.createRadialGradient(CX,CY,50,CX,CY,500);
+  const maxDim = Math.max(W,H);
+  const grd = c.createRadialGradient(CX,CY,50,CX,CY,maxDim*0.7);
   grd.addColorStop(0,COL.bgMid); grd.addColorStop(1,COL.bgDeep);
   c.fillStyle = grd; c.fillRect(0,0,W,H);
   if (state.vignette > 0) {
-    const vg = c.createRadialGradient(CX,CY,100,CX,CY,450);
+    const vg = c.createRadialGradient(CX,CY,100,CX,CY,maxDim*0.6);
     vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${state.vignette*0.3})`);
     c.fillStyle = vg; c.fillRect(0,0,W,H);
   }
@@ -861,8 +923,9 @@ function drawBoard(c, now) {
     if (state.goldenSlot === i) {
       drawBevelTri(c, sx, sy, PIECE_S, slot.ori, COL.goldenBright, "#FFF5C0", COL.goldBase, COL.goldSh, null, sa.scale);
       c.save();
-      c.font = "bold 24px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
-      const off = slot.ori === "up" ? 4 : -4;
+      const starSize = Math.max(14, PIECE_S * 0.38)|0;
+      c.font = `bold ${starSize}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
+      const off = slot.ori === "up" ? PIECE_S * 0.06 : -PIECE_S * 0.06;
       c.fillStyle = COL.goldSh; c.fillText("\u2605", sx, sy + off);
       c.restore();
     } else if (state.board[i]) {
@@ -883,7 +946,7 @@ function drawBoard(c, now) {
   for (const fl of state.floatLabels) {
     if (fl.alpha > 0) {
       c.save(); c.globalAlpha=fl.alpha;
-      c.font="bold 22px sans-serif"; c.textAlign="center"; c.textBaseline="middle";
+      c.font=`bold ${Math.max(16, S * 0.35)|0}px sans-serif`; c.textAlign="center"; c.textBaseline="middle";
       c.fillStyle=fl.color; c.fillText(fl.text, CX+fl.x, CY+fl.y+fl.offsetY);
       c.restore();
     }
@@ -909,8 +972,7 @@ function drawTrays(c, now) {
       if (p.used) continue;
 
       const pos = trayPiecePos(owner, i);
-      const breathe = 1 + 0.02 * Math.sin(now / 1200 + i * 0.7);
-      let sc = breathe;
+      let sc = 1;
 
       const isSelected = state.selectedPiece && state.selectedPiece.owner === owner && state.selectedPiece.value === p.value;
       // Show opponent's selection with a dimmer indicator
@@ -943,14 +1005,15 @@ function drawTrays(c, now) {
     // Tray labels - "YOU" / "OPPONENT"
     const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
     const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
-    c.font = "bold 14px sans-serif";
+    const labelSize = Math.max(11, TRAY_PIECE_S * 0.45)|0;
+    c.font = `bold ${labelSize}px sans-serif`;
     c.textAlign = "center"; c.textBaseline = "middle";
     const isActive = state.currentPlayer === owner && state.phase === "playing";
     c.fillStyle = isActive ? COL.accent : (owner === 0 ? "#AAA" : "#666");
 
     const label = owner === myIdx ? "YOU" : "OPPONENT";
     const colorLabel = owner === 0 ? " (White)" : " (Black)";
-    c.fillText(label + colorLabel, lx, ly - 55);
+    c.fillText(label + colorLabel, lx, ly - TRAY_PIECE_S * 1.25);
   }
 
   c.restore();
@@ -963,33 +1026,37 @@ function drawHUD(c, now) {
   const isMyTurn = state.currentPlayer === myIdx;
   const pulseA = 0.6 + 0.4 * Math.sin(now / 400);
 
+  const baseFontSize = Math.max(12, H * 0.03);
+  const margin = Math.max(16, W * 0.02);
+
   c.save();
-  c.font = "bold 20px sans-serif";
+  // Turn indicator (top center)
+  c.font = `bold ${baseFontSize * 1.2}px sans-serif`;
   c.textAlign = "center"; c.textBaseline = "top";
   c.fillStyle = isMyTurn ? COL.accent : "#889";
   c.globalAlpha = isMyTurn ? pulseA : 0.7;
-  c.fillText(isMyTurn ? "Your turn" : "Opponent's turn", CX, 16);
+  c.fillText(isMyTurn ? "Your turn" : "Opponent's turn", CX, margin);
   c.globalAlpha = 1;
 
-  // Round
-  c.font = "16px sans-serif";
-  c.fillStyle = "#AAB";
-  c.fillText(`Round ${state.round}/2`, CX, 42);
-
-  // Scores
-  c.font = "bold 15px sans-serif";
+  // Round indicator (top left)
+  c.font = `${baseFontSize}px sans-serif`;
   c.textAlign = "left";
-  c.fillStyle = COL.white;
-  c.fillText(`White: ${state.scores[0]}`, 20, 16);
+  c.fillStyle = "#AAB";
+  c.fillText(`Round ${state.round}/2`, margin, margin);
+
+  // Scores (top right, stacked)
+  c.font = `bold ${baseFontSize}px sans-serif`;
   c.textAlign = "right";
+  c.fillStyle = COL.white;
+  c.fillText(`White: ${state.scores[0]}`, W - margin, margin);
   c.fillStyle = "#999";
-  c.fillText(`Black: ${state.scores[1]}`, W - 20, 16);
+  c.fillText(`Black: ${state.scores[1]}`, W - margin, margin + baseFontSize * 1.4);
 
   // Room code
-  c.font = "12px sans-serif";
+  c.font = `${Math.max(10, baseFontSize * 0.7)|0}px sans-serif`;
   c.textAlign = "right";
   c.fillStyle = "#556";
-  c.fillText(`Room: ${Net.roomCode}`, W - 20, 36);
+  c.fillText(`Room: ${Net.roomCode}`, W - margin, margin + baseFontSize * 3);
 
   // Controls hint
   c.font = "12px sans-serif";
@@ -1010,7 +1077,7 @@ function drawToasts(c, dt) {
     if (t.timer >= t.dur) { state.toasts.splice(i, 1); continue; }
     const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
     c.save(); c.globalAlpha = Math.max(0, alpha);
-    c.font = "bold 18px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+    c.font = `bold ${Math.max(14, S * 0.3)|0}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
     c.fillStyle = COL.goldenBright; c.fillText(t.text, CX, H - 60);
     c.restore();
   }
@@ -1026,18 +1093,29 @@ function roundRect(c, x, y, w, h, r) {
 
 // ── Lobby Drawing ──────────────────────────────────────────────
 // Button rectangles for hit testing
-const BTN_CREATE = { x: CX - 130, y: 235, w: 260, h: 50, r: 10 };
-const BTN_JOIN = { x: CX - 130, y: 300, w: 260, h: 50, r: 10 };
-const BTN_HOTSEAT = { x: CX - 130, y: 365, w: 260, h: 50, r: 10 };
-const BTN_BACK = { x: CX - 80, y: 365, w: 160, h: 40, r: 8 };
-const BTN_HOWTO = { x: CX - 80, y: 425, w: 160, h: 30, r: 6 };
-const BTN_REGULAR = { x: CX - 140, y: 200, w: 280, h: 80, r: 10 };
-const BTN_HIDDEN = { x: CX - 140, y: 300, w: 280, h: 80, r: 10 };
-const BTN_START_JOIN = { x: CX - 90, y: 365, w: 80, h: 40, r: 8 };
-const BTN_BACK_JOIN = { x: CX + 10, y: 365, w: 80, h: 40, r: 8 };
+function getButtons() {
+  const bw = Math.max(200, W * 0.27);
+  const bh = Math.max(40, H * 0.09);
+  const by = H * 0.43;
+  const spacing = Math.max(50, H * 0.12);
+  return {
+    BTN_CREATE: { x: CX - bw/2, y: by, w: bw, h: bh, r: 10 },
+    BTN_JOIN: { x: CX - bw/2, y: by + spacing, w: bw, h: bh, r: 10 },
+    BTN_HOTSEAT: { x: CX - bw/2, y: by + spacing * 2, w: bw, h: bh, r: 10 },
+    BTN_BACK: { x: CX - bw * 0.3, y: by + spacing * 2, w: bw * 0.6, h: bh * 0.8, r: 8 },
+    BTN_HOWTO: { x: CX - bw * 0.3, y: by + spacing * 2.9, w: bw * 0.6, h: bh * 0.6, r: 6 },
+    BTN_REGULAR: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    BTN_HIDDEN: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    BTN_BACK_MODE: { x: CX - bw * 0.3, y: H * 0.56 + bh * 1.6 + 20, w: bw * 0.6, h: bh * 0.8, r: 8 },
+    BTN_START_JOIN: { x: CX - bw * 0.35, y: by + spacing * 2, w: bw * 0.31, h: bh * 0.8, r: 8 },
+    BTN_BACK_JOIN: { x: CX + bw * 0.04, y: by + spacing * 2, w: bw * 0.31, h: bh * 0.8, r: 8 }
+  };
+}
 
 function drawLobby(c, now) {
   if (state.phase !== "lobby" && state.phase !== "waiting" && state.phase !== "joining") return;
+
+  const {BTN_CREATE, BTN_JOIN, BTN_HOTSEAT, BTN_HOWTO, BTN_BACK, BTN_START_JOIN, BTN_BACK_JOIN} = getButtons();
 
   c.save();
   // Dim
@@ -1045,10 +1123,13 @@ function drawLobby(c, now) {
   c.fillRect(0, 0, W, H);
 
   // Title
-  c.font = "88px 'Federo', cursive";
+  const titleSize = Math.max(40, Math.min(H * 0.16, 120));
+  c.font = `${titleSize}px 'Federo', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.goldBase;
-  c.fillText("Golden Triangle", CX, 155);
+  c.fillText("Golden Triangle", CX, H * 0.29);
+
+  const btnFontSize = Math.max(16, H * 0.04);
 
   if (state.phase === "lobby") {
     // Create Game button
@@ -1057,7 +1138,7 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverCreate ? "#3A4A5A" : "#2A3A4A";
     c.fill();
     c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
-    c.font = "bold 22px sans-serif";
+    c.font = `bold ${btnFontSize}px sans-serif`;
     c.fillStyle = COL.accent;
     c.fillText("Create Game", CX, bc.y + bc.h/2);
 
@@ -1067,7 +1148,7 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverJoin ? "#3A4A5A" : "#2A3A4A";
     c.fill();
     c.strokeStyle = COL.white; c.lineWidth = 2; c.stroke();
-    c.font = "bold 22px sans-serif";
+    c.font = `bold ${btnFontSize}px sans-serif`;
     c.fillStyle = COL.white;
     c.fillText("Join Game", CX, bj.y + bj.h/2);
 
@@ -1077,20 +1158,20 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverHotSeat ? "#3A4A3A" : "#2A3A2A";
     c.fill();
     c.strokeStyle = COL.goldenBright; c.lineWidth = 2; c.stroke();
-    c.font = "bold 22px sans-serif";
+    c.font = `bold ${btnFontSize}px sans-serif`;
     c.fillStyle = COL.goldenBright;
     c.fillText("Hot Seat", CX, bh.y + bh.h/2);
 
     // Error
     if (state.lobbyError) {
-      c.font = "bold 16px sans-serif";
+      c.font = `bold ${btnFontSize * 0.73}px sans-serif`;
       c.fillStyle = COL.denied;
-      c.fillText(state.lobbyError, CX, 420);
+      c.fillText(state.lobbyError, CX, H * 0.78);
     }
 
     // How to Play toggle
     const bht = BTN_HOWTO;
-    c.font = "bold 14px sans-serif";
+    c.font = `bold ${btnFontSize * 0.64}px sans-serif`;
     c.textAlign = "center"; c.textBaseline = "middle";
     c.fillStyle = state.hoverHowTo ? "#AAB" : "#778";
     const arrow = state.howToExpanded ? "\u25B2" : "\u25BC";
@@ -1133,20 +1214,23 @@ function drawLobby(c, now) {
     }
   }
   else if (state.phase === "waiting") {
-    // Waiting for opponent
+    // Waiting for opponent — center content between title bottom and Cancel button top
+    const titleBottom = H * 0.29 + titleSize / 2;
+    const midY = titleBottom + (BTN_BACK.y - titleBottom) / 2;
+
     c.font = "bold 24px sans-serif";
     c.fillStyle = COL.white;
-    c.fillText("Room Code:", CX, 220);
+    c.fillText("Room Code:", CX, midY - 45);
 
     c.font = "bold 64px sans-serif";
     c.fillStyle = COL.goldenBright;
-    c.fillText(Net.roomCode, CX, 280);
+    c.fillText(Net.roomCode, CX, midY + 5);
 
     const blink = 0.5 + 0.5 * Math.sin(now / 500);
     c.globalAlpha = blink;
     c.font = "20px sans-serif";
     c.fillStyle = "#AAB";
-    c.fillText("Waiting for opponent...", CX, 340);
+    c.fillText("Waiting for opponent...", CX, midY + 55);
     c.globalAlpha = 1;
 
     // Back button
@@ -1160,14 +1244,23 @@ function drawLobby(c, now) {
     c.fillText("Cancel", CX, bb.y + bb.h/2);
   }
   else if (state.phase === "joining") {
+    // Center content between title bottom and buttons top
+    const titleBottom = H * 0.29 + titleSize / 2;
+    const btnsTop = BTN_START_JOIN.y;
+    const inputW = 240, inputH = 60;
+    const labelH = 24, gap = 12;
+    const totalH = labelH + gap + inputH;
+    const contentTopY = titleBottom + (btnsTop - titleBottom) / 2 - totalH / 2;
+    const labelCY = contentTopY + labelH / 2;
+    const inputY = contentTopY + labelH + gap;
+    const inputX = CX - inputW / 2;
+
     // Join input
     c.font = "bold 24px sans-serif";
     c.fillStyle = COL.white;
-    c.fillText("Enter Room Code:", CX, 220);
+    c.fillText("Enter Room Code:", CX, labelCY);
 
     // Input box
-    const inputW = 240, inputH = 60;
-    const inputX = CX - inputW/2, inputY = 255;
     roundRect(c, inputX, inputY, inputW, inputH, 8);
     c.fillStyle = "#1A1F28"; c.fill();
     c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
@@ -1191,7 +1284,7 @@ function drawLobby(c, now) {
     if (state.lobbyError) {
       c.font = "bold 16px sans-serif";
       c.fillStyle = COL.denied;
-      c.fillText(state.lobbyError, CX, 340);
+      c.fillText(state.lobbyError, CX, inputY + inputH + 18);
     }
 
     // Start button (enabled when code is 4 characters)
@@ -1224,16 +1317,22 @@ function drawLobby(c, now) {
 function drawModeSelection(c) {
   if (state.phase !== "modeSelection") return;
 
+  const {BTN_REGULAR, BTN_HIDDEN, BTN_BACK_MODE} = getButtons();
+
   c.save();
   // Dim
   c.fillStyle = "rgba(10,14,20,0.75)";
   c.fillRect(0, 0, W, H);
 
   // Title
-  c.font = "bold 36px sans-serif";
+  const titleSize = Math.max(24, H * 0.067);
+  c.font = `bold ${titleSize}px sans-serif`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.goldBase;
-  c.fillText("Select Game Mode", CX, 120);
+  c.fillText("Select Game Mode", CX, H * 0.22);
+
+  const btnTitleSize = Math.max(18, H * 0.044);
+  const btnSubSize = Math.max(12, H * 0.026);
 
   // Regular mode button
   const br = BTN_REGULAR;
@@ -1241,12 +1340,12 @@ function drawModeSelection(c) {
   c.fillStyle = state.hoverRegular ? "#3A4A5A" : "#2A3A4A";
   c.fill();
   c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
-  c.font = "bold 24px sans-serif";
+  c.font = `bold ${btnTitleSize}px sans-serif`;
   c.fillStyle = COL.accent;
-  c.fillText("Regular", CX, br.y + 28);
-  c.font = "14px sans-serif";
+  c.fillText("Regular", CX, br.y + br.h * 0.35);
+  c.font = `${btnSubSize}px sans-serif`;
   c.fillStyle = "#AAB";
-  c.fillText("Standard game rules", CX, br.y + 56);
+  c.fillText("Standard game rules", CX, br.y + br.h * 0.7);
 
   // Hidden mode button
   const bh = BTN_HIDDEN;
@@ -1254,24 +1353,22 @@ function drawModeSelection(c) {
   c.fillStyle = state.hoverHidden ? "#4A3A3A" : "#3A2A2A";
   c.fill();
   c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
-  c.font = "bold 24px sans-serif";
+  c.font = `bold ${btnTitleSize}px sans-serif`;
   c.fillStyle = COL.goldBase;
-  c.fillText("Hidden", CX, bh.y + 28);
-  c.font = "14px sans-serif";
+  c.fillText("Hidden", CX, bh.y + bh.h * 0.35);
+  c.font = `${btnSubSize}px sans-serif`;
   c.fillStyle = "#AAB";
-  c.fillText("Each player's 1 & 10 are hidden", CX, bh.y + 56);
+  c.fillText("Each player's 1 & 10 are hidden", CX, bh.y + bh.h * 0.7);
 
   // Back button (positioned below hidden button)
-  const backBtnY = 400;
-  const backBtnW = 160, backBtnH = 40, backBtnR = 8;
-  const backBtnX = CX - backBtnW/2;
-  roundRect(c, backBtnX, backBtnY, backBtnW, backBtnH, backBtnR);
+  const bb = BTN_BACK_MODE;
+  roundRect(c, bb.x, bb.y, bb.w, bb.h, bb.r);
   c.fillStyle = state.hoverBack ? "#3A3A3A" : "#2A2A2A";
   c.fill();
   c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
   c.font = "16px sans-serif";
   c.fillStyle = "#AAB";
-  c.fillText("Back", CX, backBtnY + backBtnH/2);
+  c.fillText("Back", CX, bb.y + bb.h/2);
 
   c.restore();
 }
@@ -1314,10 +1411,11 @@ function drawRoundResult(c) {
   } else {
     const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
     c.globalAlpha = blink;
-    c.font = "bold 18px sans-serif";
+    const promptSize2 = Math.max(13, H * 0.022);
+    c.font = `${promptSize2}px sans-serif`;
     c.fillStyle = COL.accent;
     const contText = state.round < 2 ? "Space / Enter / Click: Next Round" : "Space / Enter / Click: View Winner";
-    c.fillText(contText, CX, py + ph - 30);
+    c.fillText(contText, CX, py + ph - 35);
     c.globalAlpha = 1;
   }
 
@@ -1358,9 +1456,10 @@ function drawGameOver(c) {
 
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   c.globalAlpha = blink;
-  c.font = "bold 18px sans-serif";
+  const promptSize2 = Math.max(13, H * 0.022);
+  c.font = `${promptSize2}px sans-serif`;
   c.fillStyle = COL.accent;
-  c.fillText("Space / Enter / Click: Return to Lobby", CX, py + ph - 25);
+  c.fillText("Space / Enter / Click: Return to Lobby", CX, py + ph - 40);
   c.globalAlpha = 1;
 
   c.restore();
@@ -1422,6 +1521,8 @@ function pointInRect(px, py, r) {
 }
 
 function handleClick(canvasX, canvasY) {
+  const btns = getButtons();
+
   // Lobby
   if (state.phase === "lobby") {
     // Close How to Play overlay if open
@@ -1429,25 +1530,25 @@ function handleClick(canvasX, canvasY) {
       state.howToExpanded = false;
       return;
     }
-    if (pointInRect(canvasX, canvasY, BTN_CREATE)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_CREATE)) {
       if (!Net.connected) return;
       playPlaceClick();
       state.phase = "modeSelection";
       return;
     }
-    if (pointInRect(canvasX, canvasY, BTN_JOIN)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_JOIN)) {
       playPlaceClick();
       state.phase = "joining";
       state.joinCode = "";
       state.lobbyError = "";
       return;
     }
-    if (pointInRect(canvasX, canvasY, BTN_HOTSEAT)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT)) {
       playPlaceClick();
       window.location.href = "golden-triangle.html";
       return;
     }
-    if (pointInRect(canvasX, canvasY, BTN_HOWTO)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_HOWTO)) {
       state.howToExpanded = !state.howToExpanded;
       return;
     }
@@ -1456,21 +1557,19 @@ function handleClick(canvasX, canvasY) {
 
   // Mode Selection
   if (state.phase === "modeSelection") {
-    if (pointInRect(canvasX, canvasY, BTN_REGULAR)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_REGULAR)) {
       playPlaceClick();
       state.gameMode = "regular";
       Net.createRoom("regular");
       return;
     }
-    if (pointInRect(canvasX, canvasY, BTN_HIDDEN)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_HIDDEN)) {
       playPlaceClick();
       state.gameMode = "hidden";
       Net.createRoom("hidden");
       return;
     }
-    // Back button (custom position for mode selection)
-    const modeBackBtn = { x: CX - 80, y: 400, w: 160, h: 40 };
-    if (pointInRect(canvasX, canvasY, modeBackBtn)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_BACK_MODE)) {
       state.phase = "lobby";
       return;
     }
@@ -1479,7 +1578,7 @@ function handleClick(canvasX, canvasY) {
 
   // Waiting (cancel)
   if (state.phase === "waiting") {
-    if (pointInRect(canvasX, canvasY, BTN_BACK)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_BACK)) {
       returnToLobby();
     }
     return;
@@ -1487,13 +1586,13 @@ function handleClick(canvasX, canvasY) {
 
   // Joining (start and back buttons)
   if (state.phase === "joining") {
-    if (pointInRect(canvasX, canvasY, BTN_START_JOIN)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_START_JOIN)) {
       if (state.joinCode.length === 4) {
         Net.joinRoom(state.joinCode);
       }
       return;
     }
-    if (pointInRect(canvasX, canvasY, BTN_BACK_JOIN)) {
+    if (pointInRect(canvasX, canvasY, btns.BTN_BACK_JOIN)) {
       state.phase = "lobby";
       state.joinCode = "";
       state.lobbyError = "";
@@ -1607,29 +1706,29 @@ function updateShakeTweens(now) {
 }
 
 function handleMouseMove(canvasX, canvasY) {
+  const btns = getButtons();
+
   // Button hover for lobby
   if (state.phase === "lobby") {
-    state.hoverCreate = pointInRect(canvasX, canvasY, BTN_CREATE);
-    state.hoverJoin = pointInRect(canvasX, canvasY, BTN_JOIN);
-    state.hoverHotSeat = pointInRect(canvasX, canvasY, BTN_HOTSEAT);
-    state.hoverHowTo = pointInRect(canvasX, canvasY, BTN_HOWTO);
+    state.hoverCreate = pointInRect(canvasX, canvasY, btns.BTN_CREATE);
+    state.hoverJoin = pointInRect(canvasX, canvasY, btns.BTN_JOIN);
+    state.hoverHotSeat = pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT);
+    state.hoverHowTo = pointInRect(canvasX, canvasY, btns.BTN_HOWTO);
     return;
   }
   if (state.phase === "waiting") {
-    state.hoverBack = pointInRect(canvasX, canvasY, BTN_BACK);
+    state.hoverBack = pointInRect(canvasX, canvasY, btns.BTN_BACK);
     return;
   }
   if (state.phase === "joining") {
-    state.hoverStartJoin = pointInRect(canvasX, canvasY, BTN_START_JOIN);
-    state.hoverBackJoin = pointInRect(canvasX, canvasY, BTN_BACK_JOIN);
+    state.hoverStartJoin = pointInRect(canvasX, canvasY, btns.BTN_START_JOIN);
+    state.hoverBackJoin = pointInRect(canvasX, canvasY, btns.BTN_BACK_JOIN);
     return;
   }
   if (state.phase === "modeSelection") {
-    state.hoverRegular = pointInRect(canvasX, canvasY, BTN_REGULAR);
-    state.hoverHidden = pointInRect(canvasX, canvasY, BTN_HIDDEN);
-    // Back button (custom position for mode selection)
-    const modeBackBtn = { x: CX - 80, y: 400, w: 160, h: 40 };
-    state.hoverBack = pointInRect(canvasX, canvasY, modeBackBtn);
+    state.hoverRegular = pointInRect(canvasX, canvasY, btns.BTN_REGULAR);
+    state.hoverHidden = pointInRect(canvasX, canvasY, btns.BTN_HIDDEN);
+    state.hoverBack = pointInRect(canvasX, canvasY, btns.BTN_BACK_MODE);
     return;
   }
 
