@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Golden Triangle - Online</title>
-<link href="https://fonts.googleapis.com/css2?family=Federo&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Federo&display=block" rel="stylesheet">
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
@@ -1106,7 +1106,7 @@ function getButtons() {
     BTN_HOWTO: { x: CX - bw * 0.3, y: by + spacing * 2.9, w: bw * 0.6, h: bh * 0.6, r: 6 },
     BTN_REGULAR: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_HIDDEN: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
-    BTN_BACK_MODE: { x: CX - bw * 0.3, y: H * 0.56 + bh * 1.6 + 20, w: bw * 0.6, h: bh * 0.8, r: 8 },
+    BTN_BACK_MODE: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 },
     BTN_START_JOIN: { x: CX - bw * 0.35, y: by + spacing * 2, w: bw * 0.31, h: bh * 0.8, r: 8 },
     BTN_BACK_JOIN: { x: CX + bw * 0.04, y: by + spacing * 2, w: bw * 0.31, h: bh * 0.8, r: 8 }
   };
@@ -1124,7 +1124,7 @@ function drawLobby(c, now) {
 
   // Title
   const titleSize = Math.max(40, Math.min(H * 0.16, 120));
-  c.font = `${titleSize}px 'Federo', cursive`;
+  c.font = `${titleSize}px 'Federo', sans-serif`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.goldBase;
   c.fillText("Golden Triangle", CX, H * 0.29);

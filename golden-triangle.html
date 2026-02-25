@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Golden Triangle</title>
-<link href="https://fonts.googleapis.com/css2?family=Federo&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Federo&display=block" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#1B202A;user-select:none;-webkit-user-select:none}
@@ -105,44 +105,10 @@ let T23 = 2*TH / 3;
 let HS = S / 2;  // half side length
 
 let SLOTS = [];
-
-function updateSlots() {
-  SLOTS = [
-    // Band 0 (top, 5 slots): ↑ ↓ ↑ ↓ ↑
-    {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
-    {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
-    {id:2,  x:  0,   y:-4*T3, ori:"up"},
-    {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
-    {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
-    // Band 1 (7 slots): ↑ ↓ ↑ ↓ ↑ ↓ ↑
-    {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
-    {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
-    {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
-    {id:8,  x:  0,   y:-2*T3, ori:"down"},
-    {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
-    {id:10, x: 2*HS, y:-2*T3, ori:"down"},
-    {id:11, x: 3*HS, y:-1*T3, ori:"up"},
-    // Band 2 (4 slots): ↓ ↑ ↓ ↑
-    {id:12, x:-3*HS, y: 1*T3, ori:"down"},
-    {id:13, x:-2*HS, y: 2*T3, ori:"up"},
-    {id:14, x:-1*HS, y: 1*T3, ori:"down"},
-    {id:15, x:  0,   y: 2*T3, ori:"up"},
-    // Band 3 (bottom, 5 slots): ↓ ↑ ↓ ↑ ↓
-    {id:16, x:-2*HS, y: 4*T3, ori:"down"},
-    {id:17, x:-1*HS, y: 5*T3, ori:"up"},
-    {id:18, x:  0,   y: 4*T3, ori:"down"},
-    {id:19, x: 1*HS, y: 5*T3, ori:"up"},
-    {id:20, x: 2*HS, y: 4*T3, ori:"down"}
-  ];
-}
-updateSlots();
+let randomMapData = null; // stored grid data for random maps
 
 // 24 edges total (17 within-band + 7 between-band)
-// Between-band: ↑ base on VRow N+1 matches ↓ top on same VRow
-//   Band0→1: 0↔6, 2↔8, 4↔10
-//   Band1→2: 5↔12, 7↔14
-//   Band2→3: 13↔16, 15↔18
-const ADJ = [
+const STANDARD_ADJ = [
   [1, 6],          // 0
   [0, 2],          // 1
   [1, 3, 8],       // 2
@@ -165,6 +131,135 @@ const ADJ = [
   [18, 20],        // 19
   [19]             // 20
 ];
+let ADJ = STANDARD_ADJ;
+
+function updateSlots() {
+  if (randomMapData && state && state.mapType === "random") {
+    // Recompute positions from stored grid data using current dimensions
+    // No scaling — grid coordinates produce a perfect non-overlapping tiling
+    const cells = randomMapData.cells;
+    const rawPositions = cells.map(cell => {
+      const up = ((cell.gr + cell.gc) % 2 + 2) % 2 === 0;
+      return { x: cell.gc * HS, y: cell.gr * TH + (up ? T23 : T3), ori: up ? "up" : "down" };
+    });
+    let meanX = 0, meanY = 0;
+    for (const p of rawPositions) { meanX += p.x; meanY += p.y; }
+    meanX /= rawPositions.length;
+    meanY /= rawPositions.length;
+
+    SLOTS = rawPositions.map((p, id) => ({
+      id,
+      x: p.x - meanX,
+      y: p.y - meanY,
+      ori: p.ori
+    }));
+    ADJ = randomMapData.adj;
+  } else {
+    // Standard layout
+    SLOTS = [
+      // Band 0 (top, 5 slots): ↑ ↓ ↑ ↓ ↑
+      {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
+      {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
+      {id:2,  x:  0,   y:-4*T3, ori:"up"},
+      {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
+      {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
+      // Band 1 (7 slots): ↑ ↓ ↑ ↓ ↑ ↓ ↑
+      {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
+      {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
+      {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
+      {id:8,  x:  0,   y:-2*T3, ori:"down"},
+      {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
+      {id:10, x: 2*HS, y:-2*T3, ori:"down"},
+      {id:11, x: 3*HS, y:-1*T3, ori:"up"},
+      // Band 2 (4 slots): ↓ ↑ ↓ ↑
+      {id:12, x:-3*HS, y: 1*T3, ori:"down"},
+      {id:13, x:-2*HS, y: 2*T3, ori:"up"},
+      {id:14, x:-1*HS, y: 1*T3, ori:"down"},
+      {id:15, x:  0,   y: 2*T3, ori:"up"},
+      // Band 3 (bottom, 5 slots): ↓ ↑ ↓ ↑ ↓
+      {id:16, x:-2*HS, y: 4*T3, ori:"down"},
+      {id:17, x:-1*HS, y: 5*T3, ori:"up"},
+      {id:18, x:  0,   y: 4*T3, ori:"down"},
+      {id:19, x: 1*HS, y: 5*T3, ori:"up"},
+      {id:20, x: 2*HS, y: 4*T3, ori:"down"}
+    ];
+    ADJ = STANDARD_ADJ;
+  }
+}
+updateSlots();
+
+// ── Random Map Generation ─────────────────────────────────────
+function generateRandomMap() {
+  const cells = [];
+  const cellSet = new Set();
+
+  function key(gr, gc) { return gr + "," + gc; }
+  function parseKey(k) { const parts = k.split(","); return { gr: +parts[0], gc: +parts[1] }; }
+  function isUp(gr, gc) { return ((gr + gc) % 2 + 2) % 2 === 0; }
+
+  function getNeighbors(gr, gc) {
+    const n = [{ gr, gc: gc - 1 }, { gr, gc: gc + 1 }];
+    if (isUp(gr, gc)) n.push({ gr: gr + 1, gc });
+    else n.push({ gr: gr - 1, gc });
+    return n;
+  }
+
+  // Start with cell (0, 0)
+  cellSet.add(key(0, 0));
+  cells.push({ gr: 0, gc: 0 });
+
+  const frontier = new Set();
+  for (const n of getNeighbors(0, 0)) frontier.add(key(n.gr, n.gc));
+
+  while (cells.length < 21) {
+    const arr = Array.from(frontier);
+
+    // Weighted selection: prefer cells closer to centroid for compact shapes
+    let cGr = 0, cGc = 0;
+    for (const c of cells) { cGr += c.gr; cGc += c.gc; }
+    cGr /= cells.length; cGc /= cells.length;
+
+    const weights = arr.map(k => {
+      const { gr, gc } = parseKey(k);
+      const d = Math.abs(gr - cGr) + Math.abs(gc - cGc);
+      return 1 / (1 + d * d);
+    });
+    const totalW = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * totalW;
+    let pickIdx = 0;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r <= 0) { pickIdx = i; break; }
+    }
+
+    const pick = arr[pickIdx];
+    const { gr, gc } = parseKey(pick);
+
+    cellSet.add(pick);
+    cells.push({ gr, gc });
+    frontier.delete(pick);
+
+    for (const n of getNeighbors(gr, gc)) {
+      const nk = key(n.gr, n.gc);
+      if (!cellSet.has(nk)) frontier.add(nk);
+    }
+  }
+
+  // Build adjacency from grid neighbors
+  const cellMap = new Map();
+  cells.forEach((cell, idx) => cellMap.set(key(cell.gr, cell.gc), idx));
+
+  const adj = Array.from({ length: 21 }, () => []);
+  for (let i = 0; i < 21; i++) {
+    const cell = cells[i];
+    for (const n of getNeighbors(cell.gr, cell.gc)) {
+      const nk = key(n.gr, n.gc);
+      if (cellMap.has(nk)) adj[i].push(cellMap.get(nk));
+    }
+  }
+
+  randomMapData = { cells, adj };
+}
 
 // ── Canvas Setup ───────────────────────────────────────────────
 const canvas = document.getElementById("c");
@@ -349,11 +444,16 @@ function updateSpecks(dt) {
 // ── Game State ─────────────────────────────────────────────────
 function freshState() {
   return {
-    phase: "menu", // menu, playing, roundResult, gameOver, confirm
+    phase: "menu", // menu, mapSelect, menuTransition, playing, roundResult, gameOver, confirm
     round: 1,
     turnCount: 0,
     currentPlayer: 0, // 0=white, 1=black
     firstPlayer: 0,   // who starts round 1
+    gameMode: "regular", // "regular" or "hidden"
+    mapType: "standard", // "standard" or "random"
+    hiddenPiecesRevealed: false,
+    whiteHiddenOrder: [1, 10],
+    blackHiddenOrder: [1, 10],
     board: new Array(21).fill(null), // null or {owner:0|1, value:1-10}
     whitePieces: Array.from({length:10},(_,i)=>({value:i+1, used:false})),
     blackPieces: Array.from({length:10},(_,i)=>({value:i+1, used:false})),
@@ -386,12 +486,50 @@ function freshState() {
     hoverYes: false,
     hoverNo: false,
     hoverRestart: false,
-    hoverHome: false
+    hoverHome: false,
+    // map select hover states
+    hoverStandard: false,
+    hoverRandom: false,
+    hoverBack: false
   };
 }
 
 let state = freshState();
 let prevTime = performance.now();
+
+// ── Hidden Mode Helpers ───────────────────────────────────────
+function shouldHidePiece(pieceOwner, pieceValue) {
+  if (state.gameMode !== "hidden") return false;
+  if (state.hiddenPiecesRevealed) return false;
+  // In hot seat, hide ALL 1 and 10 pieces from both players (shared screen)
+  if (pieceValue === 1 || pieceValue === 10) return true;
+  return false;
+}
+
+function getTrayDisplayOrder(owner) {
+  if (state.gameMode !== "hidden") {
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  }
+  const hiddenOrder = owner === 0 ? state.whiteHiddenOrder : state.blackHiddenOrder;
+  return [2, 3, 4, 5, 6, 7, 8, 9, hiddenOrder[0], hiddenOrder[1]];
+}
+
+// ── Menu Button Layout ────────────────────────────────────────
+function getMenuButtons() {
+  const btnW = Math.max(280, W * 0.22);
+  const btnH = Math.max(65, H * 0.1);
+  const gap = Math.max(16, H * 0.025);
+  const backBtnH = Math.max(40, H * 0.06);
+  const bx = CX - btnW / 2;
+
+  const totalH = btnH * 2 + gap;
+  const startY = CY - totalH / 2 + H * 0.04;
+  return {
+    btn1: { x: bx, y: startY, w: btnW, h: btnH },
+    btn2: { x: bx, y: startY + btnH + gap, w: btnW, h: btnH },
+    back: { x: CX - btnW * 0.3, y: startY + btnH * 2 + gap * 2.5, w: btnW * 0.6, h: backBtnH }
+  };
+}
 
 // ── Tray Layout ────────────────────────────────────────────────
 const TRAY_COLS = 5, TRAY_ROWS = 2;
@@ -416,34 +554,38 @@ function drawTriPath(ctx, cx, cy, side, ori) {
   ctx.closePath();
 }
 
-function drawBevelTri(ctx, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, label, scale) {
+function drawBevelTri(ctx, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, label, scale, isHidden) {
   scale = scale || 1;
   const s = side * scale;
   ctx.save();
+  // Clip to triangle boundary so bevel strokes don't protrude into neighbors
+  drawTriPath(ctx, cx, cy, s, ori);
+  ctx.clip();
   // base fill
   drawTriPath(ctx, cx, cy, s, ori);
   ctx.fillStyle = baseCol;
   ctx.fill();
   // bevel: lighter on top edge, darker on bottom
+  // Double lineWidth to compensate for clip cutting the outer half of strokes
   const v = triVerts(cx, cy, s, ori);
   if (ori === "up") {
     // highlight: left edge
     ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); ctx.lineTo(v[1].x, v[1].y);
-    ctx.strokeStyle = hiCol; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.strokeStyle = hiCol; ctx.lineWidth = 5; ctx.stroke();
     // shadow: right edge + bottom
     ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); ctx.lineTo(v[2].x, v[2].y);
-    ctx.strokeStyle = shCol; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = shCol; ctx.lineWidth = 4; ctx.stroke();
     ctx.beginPath(); ctx.moveTo(v[1].x, v[1].y); ctx.lineTo(v[2].x, v[2].y);
-    ctx.strokeStyle = shCol; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = shCol; ctx.lineWidth = 4; ctx.stroke();
   } else {
     // highlight: top edge
     ctx.beginPath(); ctx.moveTo(v[1].x, v[1].y); ctx.lineTo(v[2].x, v[2].y);
-    ctx.strokeStyle = hiCol; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.strokeStyle = hiCol; ctx.lineWidth = 5; ctx.stroke();
     // shadow: left + right
     ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); ctx.lineTo(v[1].x, v[1].y);
-    ctx.strokeStyle = shCol; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = shCol; ctx.lineWidth = 4; ctx.stroke();
     ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); ctx.lineTo(v[2].x, v[2].y);
-    ctx.strokeStyle = shCol; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = shCol; ctx.lineWidth = 4; ctx.stroke();
   }
   // label
   if (label !== undefined && label !== null) {
@@ -453,7 +595,8 @@ function drawBevelTri(ctx, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, l
     ctx.textBaseline = "middle";
     const labelOff = ori === "up" ? s*0.08 : -s*0.08;
     ctx.fillStyle = labelCol;
-    ctx.fillText(String(label), cx, cy + labelOff);
+    const displayText = isHidden ? "?" : String(label);
+    ctx.fillText(displayText, cx, cy + labelOff);
   }
   ctx.restore();
 }
@@ -657,7 +800,8 @@ function drawBoard(ctx, now) {
         ctx.fill();
       }
 
-      drawBevelTri(ctx, sx, sy, PIECE_S, slot.ori, bc, hc, sc, lc, piece.value, sa.scale);
+      const isHidden = shouldHidePiece(piece.owner, piece.value);
+      drawBevelTri(ctx, sx, sy, PIECE_S, slot.ori, bc, hc, sc, lc, piece.value, sa.scale, isHidden);
     }
   }
 
@@ -687,8 +831,11 @@ function drawTrays(ctx, now) {
 
   for (let owner = 0; owner < 2; owner++) {
     const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+    const displayOrder = getTrayDisplayOrder(owner);
+
     for (let i = 0; i < 10; i++) {
-      const p = pieces[i];
+      const pieceValue = displayOrder[i];
+      const p = pieces[pieceValue - 1]; // pieces array is 0-indexed, values are 1-10
       if (p.used) continue;
 
       const pos = trayPiecePos(owner, i);
@@ -722,7 +869,8 @@ function drawTrays(ctx, now) {
         ctx.shadowBlur = 0;
       }
 
-      drawBevelTri(ctx, pos.x, pos.y, TRAY_PIECE_S, "down", bc, hc, shc, lc, p.value, sc);
+      const isHidden = shouldHidePiece(owner, p.value);
+      drawBevelTri(ctx, pos.x, pos.y, TRAY_PIECE_S, "down", bc, hc, shc, lc, p.value, sc, isHidden);
     }
 
     // Tray label
@@ -836,7 +984,7 @@ function drawMenu(ctx) {
 
   // Title
   const titleSize = Math.max(40, Math.min(H * 0.16, 120));
-  ctx.font = `${titleSize}px 'Federo', cursive`;
+  ctx.font = `${titleSize}px 'Federo', sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.goldBase;
   ctx.fillText("Golden Triangle", CX, H * 0.37 + slideY);
@@ -848,6 +996,67 @@ function drawMenu(ctx) {
   ctx.font = `bold ${promptSize}px sans-serif`;
   ctx.fillStyle = COL.accent;
   ctx.fillText("Press Space / Enter / Click to Start", CX, H * 0.63 + slideY);
+
+  ctx.restore();
+}
+
+function drawMapSelect(ctx) {
+  if (state.phase !== "mapSelect") return;
+  ctx.save();
+
+  // Dim backdrop
+  ctx.fillStyle = "rgba(10,14,20,0.8)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  const titleSize = Math.max(24, H * 0.055);
+  ctx.font = `bold ${titleSize}px sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = COL.goldenBright;
+  ctx.fillText("Select Map", CX, H * 0.18);
+
+  const btns = getMenuButtons();
+  const btnFontSize = Math.max(18, H * 0.04);
+  const subFontSize = Math.max(12, H * 0.024);
+
+  // Standard Map button
+  roundRect(ctx, btns.btn1.x, btns.btn1.y, btns.btn1.w, btns.btn1.h, 10);
+  ctx.fillStyle = state.hoverStandard ? "#2A4858" : "#1E3644";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverStandard ? COL.accent : "#3A5A6A";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.font = `bold ${btnFontSize}px sans-serif`;
+  ctx.fillStyle = "#DDE";
+  ctx.fillText("Standard Map", CX, btns.btn1.y + btns.btn1.h * 0.38);
+  ctx.font = `${subFontSize}px sans-serif`;
+  ctx.fillStyle = "#889";
+  ctx.fillText("Classic triangle layout", CX, btns.btn1.y + btns.btn1.h * 0.72);
+
+  // Random Map button
+  roundRect(ctx, btns.btn2.x, btns.btn2.y, btns.btn2.w, btns.btn2.h, 10);
+  ctx.fillStyle = state.hoverRandom ? "#3A3A1E" : "#2A2A14";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverRandom ? "#AAAA44" : "#6A6A3A";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.font = `bold ${btnFontSize}px sans-serif`;
+  ctx.fillStyle = "#DDE";
+  ctx.fillText("Random Map", CX, btns.btn2.y + btns.btn2.h * 0.38);
+  ctx.font = `${subFontSize}px sans-serif`;
+  ctx.fillStyle = "#889";
+  ctx.fillText("Randomly generated board", CX, btns.btn2.y + btns.btn2.h * 0.72);
+
+  // Back button
+  roundRect(ctx, btns.back.x, btns.back.y, btns.back.w, btns.back.h, 6);
+  ctx.fillStyle = state.hoverBack ? "#333" : "#252525";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverBack ? "#888" : "#555";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.font = `${Math.max(13, H * 0.026)}px sans-serif`;
+  ctx.fillStyle = "#AAB";
+  ctx.fillText("Back", CX, btns.back.y + btns.back.h / 2);
 
   ctx.restore();
 }
@@ -1039,13 +1248,25 @@ function drawGoldFlash(ctx) {
 // ── Game Logic ─────────────────────────────────────────────────
 function startMatch() {
   const oldPhase = state.phase;
+  const savedGameMode = state.gameMode;
+  const savedMapType = state.mapType;
   state = freshState();
+  state.gameMode = savedGameMode;
+  state.mapType = savedMapType;
   state.firstPlayer = Math.random() < 0.5 ? 0 : 1;
   state.currentPlayer = state.firstPlayer;
   state.round = 1;
   tweens = [];
 
-  if (oldPhase === "menu") {
+  // Set up map
+  if (state.mapType === "random") {
+    generateRandomMap();
+  } else {
+    randomMapData = null;
+  }
+  updateSlots();
+
+  if (oldPhase === "menu" || oldPhase === "mapSelect") {
     // Menu → Playing transition: 220ms fade + 12px upward slide
     state.phase = "menuTransition";
     state.menuAlpha = 1;
@@ -1078,6 +1299,7 @@ function startRound() {
   state.goldFlash = 0;
   state.resultScale = 0;
   state.phase = "playing";
+
   // Swap starting player for round 2
   if (state.round === 2) {
     state.currentPlayer = 1 - state.firstPlayer;
@@ -1167,6 +1389,11 @@ function updateIntensity() {
 }
 
 function beginReveal() {
+  // Reveal hidden pieces if in hidden mode
+  if (state.gameMode === "hidden" && !state.hiddenPiecesRevealed) {
+    state.hiddenPiecesRevealed = true;
+  }
+
   // Find the golden slot
   let emptySlot = -1;
   for (let i = 0; i < 21; i++) {
@@ -1284,6 +1511,7 @@ function handleClick(canvasX, canvasY) {
         state = freshState();
         tweens = [];
         state.phase = "menu";
+        randomMapData = null;
         resize(); // Recalculate dimensions on restart
       } else if (state.confirmAction === "home") {
         window.location.href = "index.html";
@@ -1300,9 +1528,31 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
+  // Map select
+  if (state.phase === "mapSelect") {
+    const btns = getMenuButtons();
+    if (pointInRect(canvasX, canvasY, btns.btn1)) {
+      state.mapType = "standard";
+      startMatch();
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.btn2)) {
+      state.mapType = "random";
+      startMatch();
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.back)) {
+      window.location.href = "index.html";
+      return;
+    }
+    return;
+  }
+
   // Menu
   if (state.phase === "menu" || state.phase === "menuTransition") {
-    if (state.phase === "menu") startMatch();
+    if (state.phase === "menu") {
+      state.phase = "mapSelect";
+    }
     return;
   }
 
@@ -1314,7 +1564,11 @@ function handleClick(canvasX, canvasY) {
 
   // Game over
   if (state.phase === "gameOver") {
-    startMatch();
+    state = freshState();
+    tweens = [];
+    state.phase = "menu";
+    randomMapData = null;
+    resize();
     return;
   }
 
@@ -1351,8 +1605,11 @@ function handleClick(canvasX, canvasY) {
   // Check tray clicks first
   for (let owner = 0; owner < 2; owner++) {
     const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+    const displayOrder = getTrayDisplayOrder(owner);
     for (let i = 0; i < 10; i++) {
-      if (pieces[i].used) continue;
+      const pieceValue = displayOrder[i];
+      const p = pieces[pieceValue - 1];
+      if (p.used) continue;
       const pos = trayPiecePos(owner, i);
       // Use zoom-adjusted coordinates for tray too
       const tpx = CX + (pos.x - CX);
@@ -1365,10 +1622,10 @@ function handleClick(canvasX, canvasY) {
           return;
         }
         // Toggle selection
-        if (state.selectedPiece && state.selectedPiece.value === pieces[i].value && state.selectedPiece.owner === owner) {
+        if (state.selectedPiece && state.selectedPiece.value === p.value && state.selectedPiece.owner === owner) {
           state.selectedPiece = null;
         } else {
-          state.selectedPiece = {owner, value: pieces[i].value};
+          state.selectedPiece = {owner, value: p.value};
         }
         return;
       }
@@ -1457,6 +1714,16 @@ function handleMouseMove(canvasX, canvasY) {
     return;
   }
 
+  // Map select hovers
+  if (state.phase === "mapSelect") {
+    const btns = getMenuButtons();
+    state.hoverStandard = pointInRect(canvasX, canvasY, btns.btn1);
+    state.hoverRandom = pointInRect(canvasX, canvasY, btns.btn2);
+    state.hoverBack = pointInRect(canvasX, canvasY, btns.back);
+    hoveredSlot = -1;
+    return;
+  }
+
   // Playing - button hovers
   if (state.phase === "playing") {
     const margin = Math.max(16, W * 0.02);
@@ -1529,9 +1796,24 @@ document.addEventListener("keydown", (e) => {
 
   if (key === " " || key === "Enter") {
     e.preventDefault();
-    if (state.phase === "menu" || state.phase === "menuTransition") startMatch();
-    else if (state.phase === "roundResult") advanceFromRoundResult();
-    else if (state.phase === "gameOver") startMatch();
+    if (state.phase === "menu") {
+      state.phase = "mapSelect";
+    } else if (state.phase === "roundResult") {
+      advanceFromRoundResult();
+    } else if (state.phase === "gameOver") {
+      state = freshState();
+      tweens = [];
+      state.phase = "menu";
+      randomMapData = null;
+      resize();
+    }
+  }
+
+  // Escape to go back in menus
+  if (key === "Escape") {
+    if (state.phase === "mapSelect") {
+      state.phase = "menu";
+    }
   }
 });
 
@@ -1556,8 +1838,10 @@ function frame(now) {
   // 2. Board
   drawBoard(ctx, now);
 
-  // 3. G-frame (drawn on top to cleanly frame the board)
-  drawGFrame(ctx, now);
+  // 3. G-frame (only for standard map)
+  if (state.mapType === "standard") {
+    drawGFrame(ctx, now);
+  }
 
   // 4. Trays
   drawTrays(ctx, now);
@@ -1565,6 +1849,7 @@ function frame(now) {
   // 5. UI overlays
   drawHUD(ctx, now);
   drawMenu(ctx);
+  drawMapSelect(ctx);
   drawRoundResult(ctx);
   drawGameOver(ctx);
   drawConfirmDialog(ctx);
