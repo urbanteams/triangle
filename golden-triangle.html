@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Golden Triangle</title>
-<link href="https://fonts.googleapis.com/css2?family=Federo&display=block" rel="stylesheet">
+<title>Scarlet Triangle</title>
+<link href="https://fonts.googleapis.com/css2?family=Allura&family=Merriweather:wght@400;700&display=block" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#1B202A;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#120A0E;user-select:none;-webkit-user-select:none}
 canvas{display:block;position:absolute;width:100%;height:100%}
 </style>
 </head>
@@ -20,18 +20,18 @@ let W = 960, H = 540;
 let CX = 480, CY = 270; // board center
 let S = 66; // triangle side
 let TH = S * 0.8660254; // triangle height
-let PIECE_S = 62; // piece render side (slightly smaller than slot)
+let PIECE_S = 58; // piece render side (smaller than slot to prevent overlap)
 
 // Colors
 const COL = {
-  bgDeep: "#1B202A", bgMid: "#2B3340",
+  bgDeep: "#120A0E", bgMid: "#261820",
   goldBase: "#C9A24A", goldHi: "#E7D08A", goldSh: "#8A6A22",
   white: "#F2F2F2", whiteSh: "#CFCFCF",
   black: "#121212", blackHi: "#3A3A3A",
-  slotOutline: "#6F7A89",
-  accent: "#62B6FF",
+  slotOutline: "#8A8894",
+  accent: "#C0C8D8",
   denied: "#FF5A6A",
-  goldenBright: "#F5D96B"
+  scarletBright: "#DC143C"
 };
 
 // ── Audio ─────────────────────────────────────────────────────
@@ -307,7 +307,7 @@ function resize() {
   S = Math.max(20, S);
 
   TH = S * 0.8660254;
-  PIECE_S = S * 0.94;
+  PIECE_S = S * 0.88;
   T3 = TH / 3;
   T23 = 2 * TH / 3;
   HS = S / 2;
@@ -444,7 +444,7 @@ function updateSpecks(dt) {
 // ── Game State ─────────────────────────────────────────────────
 function freshState() {
   return {
-    phase: "menu", // menu, mapSelect, menuTransition, playing, roundResult, gameOver, confirm
+    phase: "mapSelect", // mapSelect, menuTransition, playing, roundResult, gameOver, confirm
     round: 1,
     turnCount: 0,
     currentPlayer: 0, // 0=white, 1=black
@@ -516,18 +516,12 @@ function getTrayDisplayOrder(owner) {
 
 // ── Menu Button Layout ────────────────────────────────────────
 function getMenuButtons() {
-  const btnW = Math.max(280, W * 0.22);
-  const btnH = Math.max(65, H * 0.1);
-  const gap = Math.max(16, H * 0.025);
-  const backBtnH = Math.max(40, H * 0.06);
-  const bx = CX - btnW / 2;
-
-  const totalH = btnH * 2 + gap;
-  const startY = CY - totalH / 2 + H * 0.04;
+  const bw = Math.max(200, W * 0.27);
+  const bh = Math.max(40, H * 0.09);
   return {
-    btn1: { x: bx, y: startY, w: btnW, h: btnH },
-    btn2: { x: bx, y: startY + btnH + gap, w: btnW, h: btnH },
-    back: { x: CX - btnW * 0.3, y: startY + btnH * 2 + gap * 2.5, w: btnW * 0.6, h: backBtnH }
+    btn1: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    btn2: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    back: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 }
   };
 }
 
@@ -593,7 +587,7 @@ function drawBevelTri(ctx, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, l
     ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const labelOff = ori === "up" ? s*0.08 : -s*0.08;
+    const labelOff = ori === "up" ? s*0.08 : -s*0.04;
     ctx.fillStyle = labelCol;
     const displayText = isHidden ? "?" : String(label);
     ctx.fillText(displayText, cx, cy + labelOff);
@@ -724,7 +718,7 @@ function drawBackground(ctx) {
   for (const s of specks) {
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
-    ctx.fillStyle = `rgba(200,200,220,${s.a})`;
+    ctx.fillStyle = `rgba(210,200,200,${s.a})`;
     ctx.fill();
   }
 }
@@ -746,7 +740,7 @@ function drawBoard(ctx, now) {
 
     // Slot cavity
     drawTriPath(ctx, sx, sy, S, slot.ori);
-    ctx.fillStyle = "#1A1F28";
+    ctx.fillStyle = "#1A0E12";
     ctx.fill();
 
     // Hover tint
@@ -769,17 +763,17 @@ function drawBoard(ctx, now) {
     }
     ctx.stroke();
 
-    // Golden slot
+    // Scarlet slot
     if (state.goldenSlot === i) {
       drawBevelTri(ctx, sx, sy, PIECE_S, slot.ori,
-        COL.goldenBright, "#FFF5C0", COL.goldBase, COL.goldSh, null, sa.scale);
-      // Gold star symbol
+        COL.scarletBright, "#FF6680", "#8B0A1E", "#5A0814", null, sa.scale);
+      // Star symbol
       ctx.save();
       const starSize = Math.max(14, PIECE_S * 0.38)|0;
-      ctx.font = `bold ${starSize}px sans-serif`;
+      ctx.font = `bold ${starSize}px 'Merriweather', serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      const off = slot.ori === "up" ? PIECE_S * 0.06 : -PIECE_S * 0.06;
-      ctx.fillStyle = COL.goldSh;
+      const off = slot.ori === "up" ? PIECE_S * 0.06 : -PIECE_S * 0.03;
+      ctx.fillStyle = "#5A0814";
       ctx.fillText("★", sx, sy + off);
       ctx.restore();
     }
@@ -810,7 +804,7 @@ function drawBoard(ctx, now) {
     if (fl.alpha > 0) {
       ctx.save();
       ctx.globalAlpha = fl.alpha;
-      ctx.font = `bold ${Math.max(16, S * 0.35)|0}px sans-serif`;
+      ctx.font = `bold ${Math.max(16, S * 0.35)|0}px 'Merriweather', serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = fl.color;
       ctx.fillText(fl.text, CX + fl.x, CY + fl.y + fl.offsetY);
@@ -876,12 +870,13 @@ function drawTrays(ctx, now) {
     // Tray label
     const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
     const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
-    const labelSize = Math.max(11, TRAY_PIECE_S * 0.45)|0;
-    ctx.font = `bold ${labelSize}px sans-serif`;
+    const labelSize = Math.max(22, TRAY_PIECE_S * 0.9)|0;
+    ctx.font = `bold ${labelSize}px 'Allura', cursive`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const isActive = state.currentPlayer === owner && state.phase === "playing";
-    ctx.fillStyle = isActive ? COL.accent : (owner === 0 ? "#AAA" : "#666");
-    ctx.fillText(owner === 0 ? "WHITE" : "BLACK", lx, ly - TRAY_PIECE_S * 1.25);
+    ctx.fillStyle = isActive ? COL.scarletBright : (owner === 0 ? "#AAA" : "#666");
+    const label = isActive ? "You" : "Opponent";
+    ctx.fillText(label, lx, ly - TRAY_PIECE_S * 1.7);
   }
 
   ctx.restore();
@@ -900,21 +895,21 @@ function drawHUD(ctx, now) {
   const pulseA = 0.6 + 0.4 * Math.sin(now / 400);
 
   ctx.save();
-  ctx.font = `bold ${baseFontSize * 1.2}px sans-serif`;
+  ctx.font = `bold ${baseFontSize * 2.25}px 'Allura', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "top";
-  ctx.fillStyle = COL.accent;
+  ctx.fillStyle = COL.scarletBright;
   ctx.globalAlpha = pulseA;
   ctx.fillText(`${playerName} to place`, CX, margin);
   ctx.globalAlpha = 1;
 
   // Round indicator (top left)
-  ctx.font = `${baseFontSize}px sans-serif`;
+  ctx.font = `${baseFontSize}px 'Merriweather', serif`;
   ctx.textAlign = "left";
   ctx.fillStyle = "#AAB";
   ctx.fillText(`Round ${state.round}/2`, margin, margin);
 
   // Scores (top right, stacked)
-  ctx.font = `bold ${baseFontSize}px sans-serif`;
+  ctx.font = `bold ${baseFontSize}px 'Merriweather', serif`;
   ctx.textAlign = "right";
   ctx.fillStyle = COL.white;
   ctx.fillText(`White: ${state.scores[0]}`, W - margin, margin);
@@ -933,19 +928,19 @@ function drawHUD(ctx, now) {
   ctx.fillStyle = state.hoverRestart ? "#3A3A3A" : "#2A2A2A";
   ctx.fill();
   ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
-  ctx.font = `${baseFontSize * 0.75}px sans-serif`;
+  ctx.font = `${baseFontSize * 0.75}px 'Merriweather', serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#AAB";
-  ctx.fillText("Restart", restartBtn.x + restartBtn.w/2, restartBtn.y + restartBtn.h/2);
+  ctx.fillText("Restart", restartBtn.x + restartBtn.w/2, restartBtn.y + restartBtn.h/2 + 2);
 
   // Home button
   roundRect(ctx, homeBtn.x, homeBtn.y, homeBtn.w, homeBtn.h, 4);
   ctx.fillStyle = state.hoverHome ? "#3A3A3A" : "#2A2A2A";
   ctx.fill();
   ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
-  ctx.font = `${baseFontSize * 0.75}px sans-serif`;
+  ctx.font = `${baseFontSize * 0.75}px 'Merriweather', serif`;
   ctx.fillStyle = "#AAB";
-  ctx.fillText("Home", homeBtn.x + homeBtn.w/2, homeBtn.y + homeBtn.h/2);
+  ctx.fillText("Home", homeBtn.x + homeBtn.w/2, homeBtn.y + homeBtn.h/2 + 2);
 
   ctx.restore();
 }
@@ -963,9 +958,9 @@ function drawToasts(ctx, dt) {
     const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
     ctx.save();
     ctx.globalAlpha = Math.max(0, alpha);
-    ctx.font = `bold ${Math.max(14, S * 0.3)|0}px sans-serif`;
+    ctx.font = `bold ${Math.max(14, S * 0.3)|0}px 'Merriweather', serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = COL.goldenBright;
+    ctx.fillStyle = COL.scarletBright;
     ctx.fillText(t.text, CX, H - 60);
     ctx.restore();
   }
@@ -979,21 +974,21 @@ function drawMenu(ctx) {
   const slideY = state.menuSlide;
 
   // Dim
-  ctx.fillStyle = "rgba(10,14,20,0.75)";
+  ctx.fillStyle = "rgba(14,8,10,0.75)";
   ctx.fillRect(0, 0, W, H);
 
   // Title
-  const titleSize = Math.max(40, Math.min(H * 0.16, 120));
-  ctx.font = `${titleSize}px 'Federo', sans-serif`;
+  const titleSize = Math.max(52, Math.min(H * 0.22, 160));
+  ctx.font = `${titleSize}px 'Allura', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = COL.goldBase;
-  ctx.fillText("Golden Triangle", CX, H * 0.37 + slideY);
+  ctx.fillStyle = COL.scarletBright;
+  ctx.fillText("Scarlet Triangle", CX, H * 0.37 + slideY);
 
   // Start prompt
   const blink = Math.sin(performance.now() / 500) > 0 ? 1 : 0.5;
   ctx.globalAlpha = state.menuAlpha * blink;
   const promptSize = Math.max(16, H * 0.04);
-  ctx.font = `bold ${promptSize}px sans-serif`;
+  ctx.font = `bold ${promptSize}px 'Merriweather', serif`;
   ctx.fillStyle = COL.accent;
   ctx.fillText("Press Space / Enter / Click to Start", CX, H * 0.63 + slideY);
 
@@ -1005,58 +1000,54 @@ function drawMapSelect(ctx) {
   ctx.save();
 
   // Dim backdrop
-  ctx.fillStyle = "rgba(10,14,20,0.8)";
+  ctx.fillStyle = "rgba(14,8,10,0.8)";
   ctx.fillRect(0, 0, W, H);
 
-  // Title
-  const titleSize = Math.max(24, H * 0.055);
-  ctx.font = `bold ${titleSize}px sans-serif`;
+  // Title — matches online version styling
+  const titleSize = Math.max(24, H * 0.067);
+  ctx.font = `bold ${titleSize * 1.95}px 'Allura', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = COL.goldenBright;
-  ctx.fillText("Select Map", CX, H * 0.18);
+  ctx.fillStyle = COL.scarletBright;
+  ctx.fillText("Select Map", CX, H * 0.22);
 
   const btns = getMenuButtons();
-  const btnFontSize = Math.max(18, H * 0.04);
-  const subFontSize = Math.max(12, H * 0.024);
+  const btnTitleSize = Math.max(18, H * 0.044);
+  const btnSubSize = Math.max(12, H * 0.026);
 
   // Standard Map button
-  roundRect(ctx, btns.btn1.x, btns.btn1.y, btns.btn1.w, btns.btn1.h, 10);
-  ctx.fillStyle = state.hoverStandard ? "#2A4858" : "#1E3644";
+  roundRect(ctx, btns.btn1.x, btns.btn1.y, btns.btn1.w, btns.btn1.h, btns.btn1.r);
+  ctx.fillStyle = state.hoverStandard ? "#2A1820" : "#1E1018";
   ctx.fill();
-  ctx.strokeStyle = state.hoverStandard ? COL.accent : "#3A5A6A";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.font = `bold ${btnFontSize}px sans-serif`;
+  ctx.strokeStyle = state.hoverStandard ? COL.accent : "#5A3040";
+  ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
   ctx.fillStyle = "#DDE";
   ctx.fillText("Standard Map", CX, btns.btn1.y + btns.btn1.h * 0.38);
-  ctx.font = `${subFontSize}px sans-serif`;
+  ctx.font = `${btnSubSize}px 'Merriweather', serif`;
   ctx.fillStyle = "#889";
   ctx.fillText("Classic triangle layout", CX, btns.btn1.y + btns.btn1.h * 0.72);
 
   // Random Map button
-  roundRect(ctx, btns.btn2.x, btns.btn2.y, btns.btn2.w, btns.btn2.h, 10);
-  ctx.fillStyle = state.hoverRandom ? "#3A3A1E" : "#2A2A14";
+  roundRect(ctx, btns.btn2.x, btns.btn2.y, btns.btn2.w, btns.btn2.h, btns.btn2.r);
+  ctx.fillStyle = state.hoverRandom ? "#3A2018" : "#2A1810";
   ctx.fill();
-  ctx.strokeStyle = state.hoverRandom ? "#AAAA44" : "#6A6A3A";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.font = `bold ${btnFontSize}px sans-serif`;
+  ctx.strokeStyle = state.hoverRandom ? COL.goldBase : "#6A4A3A";
+  ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
   ctx.fillStyle = "#DDE";
   ctx.fillText("Random Map", CX, btns.btn2.y + btns.btn2.h * 0.38);
-  ctx.font = `${subFontSize}px sans-serif`;
+  ctx.font = `${btnSubSize}px 'Merriweather', serif`;
   ctx.fillStyle = "#889";
   ctx.fillText("Randomly generated board", CX, btns.btn2.y + btns.btn2.h * 0.72);
 
   // Back button
-  roundRect(ctx, btns.back.x, btns.back.y, btns.back.w, btns.back.h, 6);
-  ctx.fillStyle = state.hoverBack ? "#333" : "#252525";
+  roundRect(ctx, btns.back.x, btns.back.y, btns.back.w, btns.back.h, btns.back.r);
+  ctx.fillStyle = state.hoverBack ? "#2A2024" : "#1E1618";
   ctx.fill();
-  ctx.strokeStyle = state.hoverBack ? "#888" : "#555";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.font = `${Math.max(13, H * 0.026)}px sans-serif`;
+  ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = "16px 'Merriweather', serif";
   ctx.fillStyle = "#AAB";
-  ctx.fillText("Back", CX, btns.back.y + btns.back.h / 2);
+  ctx.fillText("Back", CX, btns.back.y + btns.back.h / 2 + 2);
 
   ctx.restore();
 }
@@ -1066,7 +1057,7 @@ function drawConfirmDialog(ctx) {
   ctx.save();
 
   // Dim backdrop
-  ctx.fillStyle = "rgba(10,14,20,0.7)";
+  ctx.fillStyle = "rgba(14,8,10,0.7)";
   ctx.fillRect(0, 0, W, H);
 
   // Dialog box
@@ -1075,7 +1066,7 @@ function drawConfirmDialog(ctx) {
   const px = CX - pw/2, py = CY - ph/2;
 
   roundRect(ctx, px, py, pw, ph, 12);
-  ctx.fillStyle = "rgba(30,36,48,0.95)";
+  ctx.fillStyle = "rgba(36,20,26,0.95)";
   ctx.fill();
   ctx.strokeStyle = COL.accent;
   ctx.lineWidth = 2;
@@ -1083,38 +1074,38 @@ function drawConfirmDialog(ctx) {
 
   // Question
   const questionSize = Math.max(18, H * 0.04);
-  ctx.font = `bold ${questionSize}px sans-serif`;
+  ctx.font = `bold ${questionSize}px 'Merriweather', serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#DDE";
   ctx.fillText("Are you sure?", CX, py + ph * 0.28);
 
-  // Yes button
+  // Yes button (lighter, prominent)
   const btnW = Math.max(50, W * 0.06);
   const btnH = Math.max(32, H * 0.06);
   const btnY = py + ph * 0.56;
   const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
   roundRect(ctx, yesBtn.x, yesBtn.y, yesBtn.w, yesBtn.h, 8);
-  ctx.fillStyle = state.hoverYes ? "#4A5A4A" : "#3A4A3A";
+  ctx.fillStyle = state.hoverYes ? "#4A3848" : "#3A2838";
   ctx.fill();
-  ctx.strokeStyle = state.hoverYes ? COL.accent : "#667";
+  ctx.strokeStyle = state.hoverYes ? COL.accent : "#8890A0";
   ctx.lineWidth = 2;
   ctx.stroke();
   const btnFontSize = Math.max(14, H * 0.033);
-  ctx.font = `bold ${btnFontSize}px sans-serif`;
-  ctx.fillStyle = COL.accent;
-  ctx.fillText("Yes", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2);
+  ctx.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+  ctx.fillStyle = "#E0E4EC";
+  ctx.fillText("Yes", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2 + 2);
 
-  // No button
+  // No button (darker, subdued)
   const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
   roundRect(ctx, noBtn.x, noBtn.y, noBtn.w, noBtn.h, 8);
-  ctx.fillStyle = state.hoverNo ? "#4A3A3A" : "#3A2A2A";
+  ctx.fillStyle = state.hoverNo ? "#2A1018" : "#1E0C10";
   ctx.fill();
-  ctx.strokeStyle = state.hoverNo ? COL.denied : "#667";
+  ctx.strokeStyle = state.hoverNo ? "#886" : "#443";
   ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.font = `bold ${btnFontSize}px sans-serif`;
-  ctx.fillStyle = state.hoverNo ? COL.denied : "#AAB";
-  ctx.fillText("No", noBtn.x + noBtn.w/2, noBtn.y + noBtn.h/2);
+  ctx.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+  ctx.fillStyle = state.hoverNo ? "#AA9" : "#776";
+  ctx.fillText("No", noBtn.x + noBtn.w/2, noBtn.y + noBtn.h/2 + 2);
 
   ctx.restore();
 }
@@ -1125,7 +1116,7 @@ function drawRoundResult(ctx) {
   const sc = state.resultScale;
 
   // Dim backdrop
-  ctx.fillStyle = "rgba(10,14,20,0.5)";
+  ctx.fillStyle = "rgba(14,8,10,0.5)";
   ctx.fillRect(0, 0, W, H);
 
   // Panel
@@ -1137,7 +1128,7 @@ function drawRoundResult(ctx) {
   const ph = Math.max(200, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
-  ctx.fillStyle = "rgba(30,36,48,0.95)";
+  ctx.fillStyle = "rgba(36,20,26,0.95)";
   ctx.strokeStyle = COL.goldBase;
   ctx.lineWidth = 2;
   roundRect(ctx, px, py, pw, ph, 12);
@@ -1147,12 +1138,12 @@ function drawRoundResult(ctx) {
   const scoreSize = Math.max(22, H * 0.055);
   const promptSize = Math.max(14, H * 0.033);
 
-  ctx.font = `bold ${titleSize}px sans-serif`;
+  ctx.font = `bold ${scoreSize}px 'Allura', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = COL.goldenBright;
+  ctx.fillStyle = COL.scarletBright;
   ctx.fillText(`Round ${state.round} Results`, CX, py + titleSize * 2);
 
-  ctx.font = `bold ${scoreSize}px sans-serif`;
+  ctx.font = `bold ${scoreSize}px 'Merriweather', serif`;
   ctx.fillStyle = COL.white;
   ctx.fillText(`White: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize/2);
   ctx.fillStyle = "#AAA";
@@ -1162,7 +1153,7 @@ function drawRoundResult(ctx) {
   const promptSize2 = Math.max(13, H * 0.022);
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   ctx.globalAlpha = blink;
-  ctx.font = `${promptSize2}px sans-serif`;
+  ctx.font = `${promptSize2}px 'Merriweather', serif`;
   ctx.fillStyle = COL.accent;
   const contText = state.round < 2 ? "Space / Enter / Click: Next Round" : "Space / Enter / Click: View Winner";
   ctx.fillText(contText, CX, py + ph - titleSize * 2);
@@ -1175,14 +1166,14 @@ function drawGameOver(ctx) {
   if (state.phase !== "gameOver") return;
   ctx.save();
 
-  ctx.fillStyle = "rgba(10,14,20,0.7)";
+  ctx.fillStyle = "rgba(14,8,10,0.7)";
   ctx.fillRect(0, 0, W, H);
 
   const pw = Math.max(280, W * 0.37);
   const ph = Math.max(200, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
-  ctx.fillStyle = "rgba(30,36,48,0.95)";
+  ctx.fillStyle = "rgba(36,20,26,0.95)";
   ctx.strokeStyle = COL.goldBase;
   ctx.lineWidth = 2;
   roundRect(ctx, px, py, pw, ph, 12);
@@ -1197,13 +1188,13 @@ function drawGameOver(ctx) {
   const titleSize = Math.max(18, H * 0.04);
   const scoreSize = Math.max(22, H * 0.055);
 
-  ctx.font = `bold ${titleSize}px sans-serif`;
+  ctx.font = `bold ${scoreSize}px 'Allura', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = COL.goldenBright;
+  ctx.fillStyle = COL.scarletBright;
   ctx.fillText(winner, CX, py + titleSize * 2);
 
   // Final scores large and centered
-  ctx.font = `bold ${scoreSize}px sans-serif`;
+  ctx.font = `bold ${scoreSize}px 'Merriweather', serif`;
   ctx.fillStyle = COL.white;
   ctx.fillText(`White: ${state.scores[0]}`, CX, py + ph/2 - scoreSize/2);
   ctx.fillStyle = "#AAA";
@@ -1213,9 +1204,9 @@ function drawGameOver(ctx) {
   const promptSize2 = Math.max(13, H * 0.022);
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   ctx.globalAlpha = blink;
-  ctx.font = `${promptSize2}px sans-serif`;
+  ctx.font = `${promptSize2}px 'Merriweather', serif`;
   ctx.fillStyle = COL.accent;
-  ctx.fillText("Space / Enter / Click to Play Again", CX, py + ph - titleSize * 2);
+  ctx.fillText("Space / Enter / Click: Return to Menu", CX, py + ph - titleSize * 2);
   ctx.globalAlpha = 1;
 
   ctx.restore();
@@ -1235,11 +1226,11 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// ── Gold Flash Overlay ─────────────────────────────────────────
+// ── Scarlet Flash Overlay ──────────────────────────────────────
 function drawGoldFlash(ctx) {
   if (state.goldFlash > 0) {
     ctx.save();
-    ctx.fillStyle = `rgba(245,217,107,${state.goldFlash * 0.18})`;
+    ctx.fillStyle = `rgba(220,20,60,${state.goldFlash * 0.18})`;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
@@ -1266,7 +1257,7 @@ function startMatch() {
   }
   updateSlots();
 
-  if (oldPhase === "menu" || oldPhase === "mapSelect") {
+  if (oldPhase === "mapSelect") {
     // Menu → Playing transition: 220ms fade + 12px upward slide
     state.phase = "menuTransition";
     state.menuAlpha = 1;
@@ -1354,7 +1345,7 @@ function placePiece(slotId) {
       addTween(state, "cameraZoom", 1.03, 1.0, 110, easeInOut, null, "zoom");
     }, "zoom");
 
-    // Gold flash
+    // Scarlet flash
     addTween(state, "goldFlash", 1, 0, 160, easeOut, null, "flash");
 
     // Find empty slot and start reveal
@@ -1394,7 +1385,7 @@ function beginReveal() {
     state.hiddenPiecesRevealed = true;
   }
 
-  // Find the golden slot
+  // Find the scarlet slot
   let emptySlot = -1;
   for (let i = 0; i < 21; i++) {
     if (state.board[i] == null) { emptySlot = i; break; }
@@ -1414,7 +1405,7 @@ function beginReveal() {
   }
 
   // Reveal sequence (~900ms total)
-  // Step 1: Golden triangle pop (0-200ms)
+  // Step 1: Scarlet triangle pop (0-200ms)
   const sa = state.slotAnim[emptySlot];
   addTween(sa, "scale", 0.5, 1.12, 100, easeOut, () => {
     addTween(sa, "scale", 1.12, 1.0, 100, easeInOut, null, "reveal");
@@ -1510,9 +1501,8 @@ function handleClick(canvasX, canvasY) {
       if (state.confirmAction === "restart") {
         state = freshState();
         tweens = [];
-        state.phase = "menu";
         randomMapData = null;
-        resize(); // Recalculate dimensions on restart
+        resize();
       } else if (state.confirmAction === "home") {
         window.location.href = "index.html";
       }
@@ -1548,11 +1538,8 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
-  // Menu
-  if (state.phase === "menu" || state.phase === "menuTransition") {
-    if (state.phase === "menu") {
-      state.phase = "mapSelect";
-    }
+  // Menu transition (animating out)
+  if (state.phase === "menuTransition") {
     return;
   }
 
@@ -1562,13 +1549,9 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
-  // Game over
+  // Game over - return to main page
   if (state.phase === "gameOver") {
-    state = freshState();
-    tweens = [];
-    state.phase = "menu";
-    randomMapData = null;
-    resize();
+    window.location.href = "index.html";
     return;
   }
 
@@ -1796,23 +1779,17 @@ document.addEventListener("keydown", (e) => {
 
   if (key === " " || key === "Enter") {
     e.preventDefault();
-    if (state.phase === "menu") {
-      state.phase = "mapSelect";
-    } else if (state.phase === "roundResult") {
+    if (state.phase === "roundResult") {
       advanceFromRoundResult();
     } else if (state.phase === "gameOver") {
-      state = freshState();
-      tweens = [];
-      state.phase = "menu";
-      randomMapData = null;
-      resize();
+      window.location.href = "index.html";
     }
   }
 
-  // Escape to go back in menus
+  // Escape to go back to lobby
   if (key === "Escape") {
     if (state.phase === "mapSelect") {
-      state.phase = "menu";
+      window.location.href = "index.html";
     }
   }
 });

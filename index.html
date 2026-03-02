@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Golden Triangle - Online</title>
-<link href="https://fonts.googleapis.com/css2?family=Federo&display=block" rel="stylesheet">
+<title>Scarlet Triangle - Online</title>
+<link href="https://fonts.googleapis.com/css2?family=Allura&family=Merriweather:wght@400;700&display=block" rel="stylesheet">
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 <script src="firebase-config.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#1B202A;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#120A0E;user-select:none;-webkit-user-select:none}
 canvas{display:block;position:absolute;width:100%;height:100%}
 </style>
 </head>
@@ -24,17 +24,17 @@ let W = 960, H = 540;
 let CX = 480, CY = 270;
 let S = 66;
 let TH = S * 0.8660254;
-let PIECE_S = 62;
+let PIECE_S = 58;
 
 const COL = {
-  bgDeep: "#1B202A", bgMid: "#2B3340",
+  bgDeep: "#120A0E", bgMid: "#261820",
   goldBase: "#C9A24A", goldHi: "#E7D08A", goldSh: "#8A6A22",
   white: "#F2F2F2", whiteSh: "#CFCFCF",
   black: "#121212", blackHi: "#3A3A3A",
-  slotOutline: "#6F7A89",
-  accent: "#62B6FF",
+  slotOutline: "#8A8894",
+  accent: "#C0C8D8",
   denied: "#FF5A6A",
-  goldenBright: "#F5D96B"
+  scarletBright: "#DC143C"
 };
 
 // ── Audio ─────────────────────────────────────────────────────
@@ -80,40 +80,133 @@ let T23 = 2*TH / 3;
 let HS = S / 2;
 
 let SLOTS = [];
-function updateSlots() {
-  SLOTS = [
-    {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
-    {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
-    {id:2,  x:  0,   y:-4*T3, ori:"up"},
-    {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
-    {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
-    {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
-    {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
-    {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
-    {id:8,  x:  0,   y:-2*T3, ori:"down"},
-    {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
-    {id:10, x: 2*HS, y:-2*T3, ori:"down"},
-    {id:11, x: 3*HS, y:-1*T3, ori:"up"},
-    {id:12, x:-3*HS, y: 1*T3, ori:"down"},
-    {id:13, x:-2*HS, y: 2*T3, ori:"up"},
-    {id:14, x:-1*HS, y: 1*T3, ori:"down"},
-    {id:15, x:  0,   y: 2*T3, ori:"up"},
-    {id:16, x:-2*HS, y: 4*T3, ori:"down"},
-    {id:17, x:-1*HS, y: 5*T3, ori:"up"},
-    {id:18, x:  0,   y: 4*T3, ori:"down"},
-    {id:19, x: 1*HS, y: 5*T3, ori:"up"},
-    {id:20, x: 2*HS, y: 4*T3, ori:"down"}
-  ];
-}
-updateSlots();
+let randomMapData = null;
 
-const ADJ = [
+const STANDARD_ADJ = [
   [1, 6],       [0, 2],       [1, 3, 8],    [2, 4],       [3, 10],
   [6, 12],      [0, 5, 7],    [6, 8, 14],   [2, 7, 9],    [8, 10],
   [4, 9, 11],   [10],         [5, 13],       [12, 14, 16], [7, 13, 15],
   [14, 18],     [13, 17],     [16, 18],      [15, 17, 19], [18, 20],
   [19]
 ];
+let ADJ = STANDARD_ADJ;
+
+function updateSlots() {
+  if (randomMapData && state && state.mapType === "random") {
+    const cells = randomMapData.cells;
+    const rawPositions = cells.map(cell => {
+      const up = ((cell.gr + cell.gc) % 2 + 2) % 2 === 0;
+      return { x: cell.gc * HS, y: cell.gr * TH + (up ? T23 : T3), ori: up ? "up" : "down" };
+    });
+    let meanX = 0, meanY = 0;
+    for (const p of rawPositions) { meanX += p.x; meanY += p.y; }
+    meanX /= rawPositions.length;
+    meanY /= rawPositions.length;
+
+    SLOTS = rawPositions.map((p, id) => ({
+      id,
+      x: p.x - meanX,
+      y: p.y - meanY,
+      ori: p.ori
+    }));
+    ADJ = randomMapData.adj;
+  } else {
+    SLOTS = [
+      {id:0,  x:-2*HS, y:-4*T3, ori:"up"},
+      {id:1,  x:-1*HS, y:-5*T3, ori:"down"},
+      {id:2,  x:  0,   y:-4*T3, ori:"up"},
+      {id:3,  x: 1*HS, y:-5*T3, ori:"down"},
+      {id:4,  x: 2*HS, y:-4*T3, ori:"up"},
+      {id:5,  x:-3*HS, y:-1*T3, ori:"up"},
+      {id:6,  x:-2*HS, y:-2*T3, ori:"down"},
+      {id:7,  x:-1*HS, y:-1*T3, ori:"up"},
+      {id:8,  x:  0,   y:-2*T3, ori:"down"},
+      {id:9,  x: 1*HS, y:-1*T3, ori:"up"},
+      {id:10, x: 2*HS, y:-2*T3, ori:"down"},
+      {id:11, x: 3*HS, y:-1*T3, ori:"up"},
+      {id:12, x:-3*HS, y: 1*T3, ori:"down"},
+      {id:13, x:-2*HS, y: 2*T3, ori:"up"},
+      {id:14, x:-1*HS, y: 1*T3, ori:"down"},
+      {id:15, x:  0,   y: 2*T3, ori:"up"},
+      {id:16, x:-2*HS, y: 4*T3, ori:"down"},
+      {id:17, x:-1*HS, y: 5*T3, ori:"up"},
+      {id:18, x:  0,   y: 4*T3, ori:"down"},
+      {id:19, x: 1*HS, y: 5*T3, ori:"up"},
+      {id:20, x: 2*HS, y: 4*T3, ori:"down"}
+    ];
+    ADJ = STANDARD_ADJ;
+  }
+}
+updateSlots();
+
+// ── Random Map Generation ─────────────────────────────────────
+function generateRandomMap() {
+  const cells = [];
+  const cellSet = new Set();
+
+  function key(gr, gc) { return gr + "," + gc; }
+  function parseKey(k) { const parts = k.split(","); return { gr: +parts[0], gc: +parts[1] }; }
+  function isUp(gr, gc) { return ((gr + gc) % 2 + 2) % 2 === 0; }
+
+  function getNeighbors(gr, gc) {
+    const n = [{ gr, gc: gc - 1 }, { gr, gc: gc + 1 }];
+    if (isUp(gr, gc)) n.push({ gr: gr + 1, gc });
+    else n.push({ gr: gr - 1, gc });
+    return n;
+  }
+
+  cellSet.add(key(0, 0));
+  cells.push({ gr: 0, gc: 0 });
+
+  const frontier = new Set();
+  for (const n of getNeighbors(0, 0)) frontier.add(key(n.gr, n.gc));
+
+  while (cells.length < 21) {
+    const arr = Array.from(frontier);
+    let cGr = 0, cGc = 0;
+    for (const c of cells) { cGr += c.gr; cGc += c.gc; }
+    cGr /= cells.length; cGc /= cells.length;
+
+    const weights = arr.map(k => {
+      const { gr, gc } = parseKey(k);
+      const d = Math.abs(gr - cGr) + Math.abs(gc - cGc);
+      return 1 / (1 + d * d);
+    });
+    const totalW = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * totalW;
+    let pickIdx = 0;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r <= 0) { pickIdx = i; break; }
+    }
+
+    const pick = arr[pickIdx];
+    const { gr, gc } = parseKey(pick);
+
+    cellSet.add(pick);
+    cells.push({ gr, gc });
+    frontier.delete(pick);
+
+    for (const n of getNeighbors(gr, gc)) {
+      const nk = key(n.gr, n.gc);
+      if (!cellSet.has(nk)) frontier.add(nk);
+    }
+  }
+
+  const cellMap = new Map();
+  cells.forEach((cell, idx) => cellMap.set(key(cell.gr, cell.gc), idx));
+
+  const adj = Array.from({ length: 21 }, () => []);
+  for (let i = 0; i < 21; i++) {
+    const cell = cells[i];
+    for (const n of getNeighbors(cell.gr, cell.gc)) {
+      const nk = key(n.gr, n.gc);
+      if (cellMap.has(nk)) adj[i].push(cellMap.get(nk));
+    }
+  }
+
+  randomMapData = { cells, adj };
+}
 
 // ── Canvas Setup ───────────────────────────────────────────────
 const canvas = document.getElementById("c");
@@ -157,7 +250,7 @@ function resize() {
   S = Math.max(20, S);
 
   TH = S * 0.8660254;
-  PIECE_S = S * 0.94;
+  PIECE_S = S * 0.88;
   T3 = TH / 3;
   T23 = 2 * TH / 3;
   HS = S / 2;
@@ -295,18 +388,22 @@ const Net = {
     // This is handled in handleMessage equivalent
   },
 
-  createRoom(gameMode) {
+  createRoom(gameMode, mapType, mapData) {
     const code = this.generateRoomCode();
     const firstPlayer = Math.random() < 0.5 ? 0 : 1;
 
     const roomData = {
       created: Date.now(),
       gameMode: gameMode || "regular",
+      mapType: mapType || "standard",
       firstPlayer: firstPlayer,
       players: { 0: true, 1: null }, // 0=creator present, 1=empty
       gameState: null,
       status: "waiting"
     };
+    if (mapData) {
+      roomData.mapData = mapData;
+    }
 
     this.db.ref(`rooms/${code}`).set(roomData).then(() => {
       this.roomCode = code;
@@ -353,7 +450,15 @@ const Net = {
       this.myIndex = 1;
       this.roomRef = roomRef;
       state.gameMode = room.gameMode;
+      state.mapType = room.mapType || "standard";
       state.lobbyError = "";
+
+      // Restore random map data if this is a random map game
+      if (room.mapType === "random" && room.mapData) {
+        randomMapData = room.mapData;
+      } else {
+        randomMapData = null;
+      }
 
       // Join the room
       roomRef.child('players/1').set(true).then(() => {
@@ -453,7 +558,7 @@ const Net = {
   },
 
   sendRoundResult() {
-    // Find the golden slot (empty slot)
+    // Find the scarlet slot (empty slot)
     let emptySlot = -1;
     for (let i = 0; i < 21; i++) {
       if (state.board[i] == null) { emptySlot = i; break; }
@@ -536,12 +641,13 @@ const Net = {
 // ── Game State ─────────────────────────────────────────────────
 function freshState() {
   return {
-    phase: "lobby",  // lobby, modeSelection, creating, joining, waiting, playing, roundResult, waitingAdvance, gameOver, disconnected
+    phase: "lobby",  // lobby, modeSelection, mapSelection, creating, joining, waiting, playing, roundResult, waitingAdvance, gameOver, disconnected
     round: 1,
     turnCount: 0,
     currentPlayer: 0,
     firstPlayer: 0,
     gameMode: "regular", // regular or hidden
+    mapType: "standard", // "standard" or "random"
     hiddenPiecesRevealed: false,
     whiteHiddenOrder: [1, 10], // Order of 1 and 10 for white player (randomized in hidden mode)
     blackHiddenOrder: [1, 10], // Order of 1 and 10 for black player (randomized in hidden mode)
@@ -583,7 +689,17 @@ function freshState() {
     hoverRegular: false,
     hoverHidden: false,
     hoverStartJoin: false,
-    hoverBackJoin: false
+    hoverBackJoin: false,
+    // map select hover states
+    hoverStandard: false,
+    hoverRandom: false,
+    hoverBackMap: false,
+    // confirmation dialog state
+    confirmAction: null, // "restart" or "home"
+    hoverYes: false,
+    hoverNo: false,
+    hoverRestart: false,
+    hoverHome: false
   };
 }
 
@@ -593,16 +709,23 @@ let prevTime = performance.now();
 // ── Online Game Flow ───────────────────────────────────────────
 function startOnlineMatch(firstPlayer) {
   const oldPhase = state.phase;
-  const savedGameMode = state.gameMode; // Preserve game mode
-  const savedLobbyFields = { joinCode: state.joinCode };
+  const savedGameMode = state.gameMode;
+  const savedMapType = state.mapType;
   state = freshState();
-  state.gameMode = savedGameMode; // Restore game mode
+  state.gameMode = savedGameMode;
+  state.mapType = savedMapType;
 
   // Initialize randomized hidden piece order for hidden mode
   if (state.gameMode === "hidden") {
     state.whiteHiddenOrder = Math.random() < 0.5 ? [1, 10] : [10, 1];
     state.blackHiddenOrder = Math.random() < 0.5 ? [1, 10] : [10, 1];
   }
+
+  // Set up map
+  if (state.mapType !== "random") {
+    randomMapData = null;
+  }
+  updateSlots();
 
   state.firstPlayer = firstPlayer;
   state.currentPlayer = firstPlayer;
@@ -695,7 +818,7 @@ function beginRevealOnline(goldenSlot, roundScores, totalScores, round) {
 }
 
 function continueRevealOnline(goldenSlot) {
-  // Golden triangle pop
+  // Scarlet triangle pop
   const sa = state.slotAnim[goldenSlot];
   addTween(sa, "scale", 0.5, 1.12, 100, easeOut, () => {
     addTween(sa, "scale", 1.12, 1.0, 100, easeInOut, null, "reveal");
@@ -751,8 +874,10 @@ function returnToLobby() {
   Net.myIndex = -1;
   Net.roomCode = "";
   Net.roomRef = null;
+  randomMapData = null;
   state = freshState();
   tweens = [];
+  updateSlots();
 }
 
 // ── Tray Layout ────────────────────────────────────────────────
@@ -796,29 +921,33 @@ function drawBevelTri(c, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, lab
   scale = scale || 1;
   const s = side * scale;
   c.save();
+  // Clip to triangle boundary so bevel strokes don't protrude into neighbors
+  drawTriPath(c, cx, cy, s, ori);
+  c.clip();
   drawTriPath(c, cx, cy, s, ori);
   c.fillStyle = baseCol; c.fill();
+  // Double lineWidth to compensate for clip cutting the outer half of strokes
   const v = triVerts(cx, cy, s, ori);
   if (ori === "up") {
     c.beginPath(); c.moveTo(v[0].x,v[0].y); c.lineTo(v[1].x,v[1].y);
-    c.strokeStyle=hiCol; c.lineWidth=2.5; c.stroke();
+    c.strokeStyle=hiCol; c.lineWidth=5; c.stroke();
     c.beginPath(); c.moveTo(v[0].x,v[0].y); c.lineTo(v[2].x,v[2].y);
-    c.strokeStyle=shCol; c.lineWidth=2; c.stroke();
+    c.strokeStyle=shCol; c.lineWidth=4; c.stroke();
     c.beginPath(); c.moveTo(v[1].x,v[1].y); c.lineTo(v[2].x,v[2].y);
-    c.strokeStyle=shCol; c.lineWidth=2; c.stroke();
+    c.strokeStyle=shCol; c.lineWidth=4; c.stroke();
   } else {
     c.beginPath(); c.moveTo(v[1].x,v[1].y); c.lineTo(v[2].x,v[2].y);
-    c.strokeStyle=hiCol; c.lineWidth=2.5; c.stroke();
+    c.strokeStyle=hiCol; c.lineWidth=5; c.stroke();
     c.beginPath(); c.moveTo(v[0].x,v[0].y); c.lineTo(v[1].x,v[1].y);
-    c.strokeStyle=shCol; c.lineWidth=2; c.stroke();
+    c.strokeStyle=shCol; c.lineWidth=4; c.stroke();
     c.beginPath(); c.moveTo(v[0].x,v[0].y); c.lineTo(v[2].x,v[2].y);
-    c.strokeStyle=shCol; c.lineWidth=2; c.stroke();
+    c.strokeStyle=shCol; c.lineWidth=4; c.stroke();
   }
   if (label !== undefined && label !== null) {
     const fontSize = Math.max(16, s * 0.42)|0;
     c.font = `bold ${fontSize}px sans-serif`;
     c.textAlign = "center"; c.textBaseline = "middle";
-    const labelOff = ori === "up" ? s*0.08 : -s*0.08;
+    const labelOff = ori === "up" ? s*0.08 : -s*0.04;
     c.fillStyle = labelCol;
     // Show "?" if hidden, otherwise show the number
     const displayText = isHidden ? "?" : String(label);
@@ -888,7 +1017,7 @@ function drawBackground(c) {
   }
   for (const s of specks) {
     c.beginPath(); c.arc(s.x,s.y,s.r,0,Math.PI*2);
-    c.fillStyle=`rgba(200,200,220,${s.a})`; c.fill();
+    c.fillStyle=`rgba(210,200,200,${s.a})`; c.fill();
   }
 }
 
@@ -904,7 +1033,7 @@ function drawBoard(c, now) {
     const sx = CX + slot.x + sa.shakeX, sy = CY + slot.y;
 
     drawTriPath(c, sx, sy, S, slot.ori);
-    c.fillStyle = "#1A1F28"; c.fill();
+    c.fillStyle = "#1A0E12"; c.fill();
 
     if (sa.hoverTint > 0 && state.selectedPiece) {
       drawTriPath(c, sx, sy, S, slot.ori);
@@ -921,12 +1050,12 @@ function drawBoard(c, now) {
     c.stroke();
 
     if (state.goldenSlot === i) {
-      drawBevelTri(c, sx, sy, PIECE_S, slot.ori, COL.goldenBright, "#FFF5C0", COL.goldBase, COL.goldSh, null, sa.scale);
+      drawBevelTri(c, sx, sy, PIECE_S, slot.ori, COL.scarletBright, "#FF6680", "#8B0A1E", "#5A0814", null, sa.scale);
       c.save();
       const starSize = Math.max(14, PIECE_S * 0.38)|0;
-      c.font = `bold ${starSize}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
-      const off = slot.ori === "up" ? PIECE_S * 0.06 : -PIECE_S * 0.06;
-      c.fillStyle = COL.goldSh; c.fillText("\u2605", sx, sy + off);
+      c.font = `bold ${starSize}px 'Merriweather', serif`; c.textAlign = "center"; c.textBaseline = "middle";
+      const off = slot.ori === "up" ? PIECE_S * 0.06 : -PIECE_S * 0.03;
+      c.fillStyle = "#5A0814"; c.fillText("\u2605", sx, sy + off);
       c.restore();
     } else if (state.board[i]) {
       const piece = state.board[i];
@@ -946,7 +1075,7 @@ function drawBoard(c, now) {
   for (const fl of state.floatLabels) {
     if (fl.alpha > 0) {
       c.save(); c.globalAlpha=fl.alpha;
-      c.font=`bold ${Math.max(16, S * 0.35)|0}px sans-serif`; c.textAlign="center"; c.textBaseline="middle";
+      c.font=`bold ${Math.max(16, S * 0.35)|0}px 'Merriweather', serif`; c.textAlign="center"; c.textBaseline="middle";
       c.fillStyle=fl.color; c.fillText(fl.text, CX+fl.x, CY+fl.y+fl.offsetY);
       c.restore();
     }
@@ -1005,15 +1134,14 @@ function drawTrays(c, now) {
     // Tray labels - "YOU" / "OPPONENT"
     const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
     const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
-    const labelSize = Math.max(11, TRAY_PIECE_S * 0.45)|0;
-    c.font = `bold ${labelSize}px sans-serif`;
+    const labelSize = Math.max(22, TRAY_PIECE_S * 0.9)|0;
+    c.font = `bold ${labelSize}px 'Allura', cursive`;
     c.textAlign = "center"; c.textBaseline = "middle";
     const isActive = state.currentPlayer === owner && state.phase === "playing";
-    c.fillStyle = isActive ? COL.accent : (owner === 0 ? "#AAA" : "#666");
+    c.fillStyle = isActive ? COL.scarletBright : (owner === 0 ? "#AAA" : "#666");
 
-    const label = owner === myIdx ? "YOU" : "OPPONENT";
-    const colorLabel = owner === 0 ? " (White)" : " (Black)";
-    c.fillText(label + colorLabel, lx, ly - TRAY_PIECE_S * 1.25);
+    const label = owner === myIdx ? "You" : "Opponent";
+    c.fillText(label, lx, ly - TRAY_PIECE_S * 1.7);
   }
 
   c.restore();
@@ -1031,21 +1159,21 @@ function drawHUD(c, now) {
 
   c.save();
   // Turn indicator (top center)
-  c.font = `bold ${baseFontSize * 1.2}px sans-serif`;
+  c.font = `bold ${baseFontSize * 2.25}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "top";
-  c.fillStyle = isMyTurn ? COL.accent : "#889";
+  c.fillStyle = isMyTurn ? COL.scarletBright : "#889";
   c.globalAlpha = isMyTurn ? pulseA : 0.7;
   c.fillText(isMyTurn ? "Your turn" : "Opponent's turn", CX, margin);
   c.globalAlpha = 1;
 
   // Round indicator (top left)
-  c.font = `${baseFontSize}px sans-serif`;
+  c.font = `${baseFontSize}px 'Merriweather', serif`;
   c.textAlign = "left";
   c.fillStyle = "#AAB";
   c.fillText(`Round ${state.round}/2`, margin, margin);
 
   // Scores (top right, stacked)
-  c.font = `bold ${baseFontSize}px sans-serif`;
+  c.font = `bold ${baseFontSize}px 'Merriweather', serif`;
   c.textAlign = "right";
   c.fillStyle = COL.white;
   c.fillText(`White: ${state.scores[0]}`, W - margin, margin);
@@ -1053,18 +1181,96 @@ function drawHUD(c, now) {
   c.fillText(`Black: ${state.scores[1]}`, W - margin, margin + baseFontSize * 1.4);
 
   // Room code
-  c.font = `${Math.max(10, baseFontSize * 0.7)|0}px sans-serif`;
+  c.font = `${Math.max(10, baseFontSize * 0.7)|0}px 'Merriweather', serif`;
   c.textAlign = "right";
   c.fillStyle = "#556";
   c.fillText(`Room: ${Net.roomCode}`, W - margin, margin + baseFontSize * 3);
 
-  // Controls hint
-  c.font = "12px sans-serif";
-  c.textAlign = "center";
-  c.fillStyle = "#667";
-  c.fillText("Tap piece \u2192 tap slot  |  R: Return to lobby", CX, H - 16);
+  // Restart and Home buttons
+  const btnW = Math.max(50, W * 0.06);
+  const btnH = Math.max(24, H * 0.045);
+  const btnY = H - margin - btnH;
+  const restartBtn = {x: W - margin * 2 - btnW * 2, y: btnY, w: btnW, h: btnH};
+  const homeBtn = {x: W - margin - btnW, y: btnY, w: btnW, h: btnH};
+
+  // Restart button
+  roundRect(c, restartBtn.x, restartBtn.y, restartBtn.w, restartBtn.h, 4);
+  c.fillStyle = state.hoverRestart ? "#2A2024" : "#1E1618";
+  c.fill();
+  c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+  c.font = `${baseFontSize * 0.75}px 'Merriweather', serif`;
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = "#AAB";
+  c.fillText("Restart", restartBtn.x + restartBtn.w/2, restartBtn.y + restartBtn.h/2 + 2);
+
+  // Home button
+  roundRect(c, homeBtn.x, homeBtn.y, homeBtn.w, homeBtn.h, 4);
+  c.fillStyle = state.hoverHome ? "#2A2024" : "#1E1618";
+  c.fill();
+  c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+  c.font = `${baseFontSize * 0.75}px 'Merriweather', serif`;
+  c.fillStyle = "#AAB";
+  c.fillText("Home", homeBtn.x + homeBtn.w/2, homeBtn.y + homeBtn.h/2 + 2);
 
   c.restore();
+}
+
+function drawConfirmDialog(ctx) {
+  if (state.phase !== "confirm") return;
+  ctx.save();
+
+  // Dim backdrop
+  ctx.fillStyle = "rgba(14,8,10,0.7)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Dialog box
+  const pw = Math.max(250, W * 0.33);
+  const ph = Math.max(150, H * 0.33);
+  const px = CX - pw/2, py = CY - ph/2;
+
+  roundRect(ctx, px, py, pw, ph, 12);
+  ctx.fillStyle = "rgba(36,20,26,0.95)";
+  ctx.fill();
+  ctx.strokeStyle = COL.accent;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Question
+  const questionSize = Math.max(18, H * 0.04);
+  ctx.font = `bold ${questionSize}px 'Merriweather', serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#DDE";
+  ctx.fillText("Are you sure?", CX, py + ph * 0.28);
+
+  // Yes button (lighter, prominent)
+  const btnW = Math.max(50, W * 0.06);
+  const btnH = Math.max(32, H * 0.06);
+  const btnY = py + ph * 0.56;
+  const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
+  roundRect(ctx, yesBtn.x, yesBtn.y, yesBtn.w, yesBtn.h, 8);
+  ctx.fillStyle = state.hoverYes ? "#4A3848" : "#3A2838";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverYes ? COL.accent : "#8890A0";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  const btnFontSize = Math.max(14, H * 0.033);
+  ctx.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+  ctx.fillStyle = "#E0E4EC";
+  ctx.fillText("Yes", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2 + 2);
+
+  // No button (darker, subdued)
+  const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
+  roundRect(ctx, noBtn.x, noBtn.y, noBtn.w, noBtn.h, 8);
+  ctx.fillStyle = state.hoverNo ? "#2A1018" : "#1E0C10";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverNo ? "#886" : "#443";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+  ctx.fillStyle = state.hoverNo ? "#AA9" : "#776";
+  ctx.fillText("No", noBtn.x + noBtn.w/2, noBtn.y + noBtn.h/2 + 2);
+
+  ctx.restore();
 }
 
 // ── Toasts ─────────────────────────────────────────────────────
@@ -1077,8 +1283,8 @@ function drawToasts(c, dt) {
     if (t.timer >= t.dur) { state.toasts.splice(i, 1); continue; }
     const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
     c.save(); c.globalAlpha = Math.max(0, alpha);
-    c.font = `bold ${Math.max(14, S * 0.3)|0}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillStyle = COL.goldenBright; c.fillText(t.text, CX, H - 60);
+    c.font = `bold ${Math.max(14, S * 0.3)|0}px 'Merriweather', serif`; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = COL.scarletBright; c.fillText(t.text, CX, H - 60);
     c.restore();
   }
 }
@@ -1107,6 +1313,9 @@ function getButtons() {
     BTN_REGULAR: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_HIDDEN: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_BACK_MODE: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 },
+    BTN_STANDARD: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    BTN_RANDOM: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    BTN_BACK_MAP: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 },
     BTN_START_JOIN: { x: CX - bw * 0.35, y: by + spacing * 2, w: bw * 0.31, h: bh * 0.8, r: 8 },
     BTN_BACK_JOIN: { x: CX + bw * 0.04, y: by + spacing * 2, w: bw * 0.31, h: bh * 0.8, r: 8 }
   };
@@ -1119,96 +1328,102 @@ function drawLobby(c, now) {
 
   c.save();
   // Dim
-  c.fillStyle = "rgba(10,14,20,0.75)";
+  c.fillStyle = "rgba(14,8,10,0.75)";
   c.fillRect(0, 0, W, H);
 
   // Title
-  const titleSize = Math.max(40, Math.min(H * 0.16, 120));
-  c.font = `${titleSize}px 'Federo', sans-serif`;
+  const titleSize = Math.max(52, Math.min(H * 0.22, 160));
+  c.font = `${titleSize}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
-  c.fillStyle = COL.goldBase;
-  c.fillText("Golden Triangle", CX, H * 0.29);
+  c.fillStyle = COL.scarletBright;
+  c.fillText("Scarlet Triangle", CX, H * 0.29);
 
   const btnFontSize = Math.max(16, H * 0.04);
 
   if (state.phase === "lobby") {
-    // Create Game button
+    // Create Game button (gold)
     const bc = BTN_CREATE;
     roundRect(c, bc.x, bc.y, bc.w, bc.h, bc.r);
-    c.fillStyle = state.hoverCreate ? "#3A4A5A" : "#2A3A4A";
+    c.fillStyle = state.hoverCreate ? "#2A2018" : "#1E1810";
     c.fill();
-    c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${btnFontSize}px sans-serif`;
-    c.fillStyle = COL.accent;
-    c.fillText("Create Game", CX, bc.y + bc.h/2);
+    c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+    c.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+    c.fillStyle = COL.goldBase;
+    c.fillText("Create Game", CX, bc.y + bc.h/2 + 2);
 
     // Join Game button
     const bj = BTN_JOIN;
     roundRect(c, bj.x, bj.y, bj.w, bj.h, bj.r);
-    c.fillStyle = state.hoverJoin ? "#3A4A5A" : "#2A3A4A";
+    c.fillStyle = state.hoverJoin ? "#2A2A30" : "#1E1E24";
     c.fill();
-    c.strokeStyle = COL.white; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${btnFontSize}px sans-serif`;
-    c.fillStyle = COL.white;
-    c.fillText("Join Game", CX, bj.y + bj.h/2);
+    c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
+    c.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+    c.fillStyle = COL.accent;
+    c.fillText("Join Game", CX, bj.y + bj.h/2 + 2);
 
-    // Hot Seat button
+    // Hot Seat button (scarlet)
     const bh = BTN_HOTSEAT;
     roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
-    c.fillStyle = state.hoverHotSeat ? "#3A4A3A" : "#2A3A2A";
+    c.fillStyle = state.hoverHotSeat ? "#2A1820" : "#1E1018";
     c.fill();
-    c.strokeStyle = COL.goldenBright; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${btnFontSize}px sans-serif`;
-    c.fillStyle = COL.goldenBright;
-    c.fillText("Hot Seat", CX, bh.y + bh.h/2);
+    c.strokeStyle = COL.scarletBright; c.lineWidth = 2; c.stroke();
+    c.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+    c.fillStyle = COL.scarletBright;
+    c.fillText("Hot Seat", CX, bh.y + bh.h/2 + 2);
 
     // Error
     if (state.lobbyError) {
-      c.font = `bold ${btnFontSize * 0.73}px sans-serif`;
+      c.font = `bold ${btnFontSize * 0.73}px 'Merriweather', serif`;
       c.fillStyle = COL.denied;
       c.fillText(state.lobbyError, CX, H * 0.78);
     }
 
     // How to Play toggle
     const bht = BTN_HOWTO;
-    c.font = `bold ${btnFontSize * 0.64}px sans-serif`;
+    c.font = `bold ${btnFontSize * 0.64}px 'Merriweather', serif`;
     c.textAlign = "center"; c.textBaseline = "middle";
     c.fillStyle = state.hoverHowTo ? "#AAB" : "#778";
     const arrow = state.howToExpanded ? "\u25B2" : "\u25BC";
-    c.fillText(arrow + " How to Play " + arrow, CX, bht.y + bht.h/2);
+    c.fillText(arrow + " How to Play " + arrow, CX, bht.y + bht.h/2 + 2);
 
     if (state.howToExpanded) {
       // Dim overlay
-      c.fillStyle = "rgba(10,14,20,0.7)";
+      c.fillStyle = "rgba(14,8,10,0.7)";
       c.fillRect(0, 0, W, H);
 
       const lines = [
         "Alternate placing numbered triangles (1\u201310) onto the board.",
-        "After the last placement, the final, empty slot becomes the Golden Triangle.",
-        "Triangles adjacent to the Golden Triangle score points.",
+        "After the last placement, the final, empty slot becomes the Scarlet Triangle.",
+        "Triangles adjacent to the Scarlet Triangle score points.",
         "Whoever has the most points at the end of two rounds is the winner!"
       ];
-      const lineH = 28, pad = 20;
-      const boxW = 540, boxR = 10;
-      const boxH = pad * 2 + lines.length * lineH + 50;
+      const lineH = 28, pad = 28;
+      const boxW = 620, boxR = 10;
+      const titleGap = 38;
+      const contentH = titleGap + (lines.length - 1) * lineH;
+      const closeH = 34;
+      const boxH = contentH + closeH + pad * 2 + 24;
       const boxX = CX - boxW/2, boxY = CY - boxH/2;
 
       roundRect(c, boxX, boxY, boxW, boxH, boxR);
-      c.fillStyle = "rgba(30,36,48,0.95)"; c.fill();
+      c.fillStyle = "rgba(36,20,26,0.95)"; c.fill();
       c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
 
-      c.font = "bold 22px sans-serif";
-      c.textAlign = "center"; c.textBaseline = "middle";
-      c.fillStyle = COL.goldenBright;
-      c.fillText("How to Play", CX, boxY + 30);
+      const contentArea = boxH - closeH;
+      const titleY = boxY + (contentArea - contentH) / 2;
 
-      c.font = "15px sans-serif";
+      c.font = "bold 42px 'Allura', cursive";
+      c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillStyle = COL.scarletBright;
+      c.fillText("How to Play", CX, titleY);
+
+      c.font = "15px 'Merriweather', serif";
       c.fillStyle = "#CCD";
       for (let i = 0; i < lines.length; i++) {
-        c.fillText(lines[i], CX, boxY + 65 + i * lineH);
+        c.fillText(lines[i], CX, titleY + titleGap + i * lineH);
       }
 
-      c.font = "13px sans-serif";
+      c.font = "13px 'Merriweather', serif";
       c.fillStyle = "#667";
       c.fillText("Click anywhere to close", CX, boxY + boxH - 18);
     }
@@ -1218,17 +1433,17 @@ function drawLobby(c, now) {
     const titleBottom = H * 0.29 + titleSize / 2;
     const midY = titleBottom + (BTN_BACK.y - titleBottom) / 2;
 
-    c.font = "bold 24px sans-serif";
+    c.font = "bold 24px 'Merriweather', serif";
     c.fillStyle = COL.white;
     c.fillText("Room Code:", CX, midY - 45);
 
-    c.font = "bold 64px sans-serif";
-    c.fillStyle = COL.goldenBright;
+    c.font = "bold 64px 'Merriweather', serif";
+    c.fillStyle = COL.scarletBright;
     c.fillText(Net.roomCode, CX, midY + 5);
 
     const blink = 0.5 + 0.5 * Math.sin(now / 500);
     c.globalAlpha = blink;
-    c.font = "20px sans-serif";
+    c.font = "20px 'Merriweather', serif";
     c.fillStyle = "#AAB";
     c.fillText("Waiting for opponent...", CX, midY + 55);
     c.globalAlpha = 1;
@@ -1236,12 +1451,12 @@ function drawLobby(c, now) {
     // Back button
     const bb = BTN_BACK;
     roundRect(c, bb.x, bb.y, bb.w, bb.h, bb.r);
-    c.fillStyle = state.hoverBack ? "#3A3A3A" : "#2A2A2A";
+    c.fillStyle = state.hoverBack ? "#2A2024" : "#1E1618";
     c.fill();
     c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-    c.font = "16px sans-serif";
+    c.font = "16px 'Merriweather', serif";
     c.fillStyle = "#AAB";
-    c.fillText("Cancel", CX, bb.y + bb.h/2);
+    c.fillText("Cancel", CX, bb.y + bb.h/2 + 2);
   }
   else if (state.phase === "joining") {
     // Center content between title bottom and buttons top
@@ -1256,16 +1471,16 @@ function drawLobby(c, now) {
     const inputX = CX - inputW / 2;
 
     // Join input
-    c.font = "bold 24px sans-serif";
+    c.font = "bold 24px 'Merriweather', serif";
     c.fillStyle = COL.white;
     c.fillText("Enter Room Code:", CX, labelCY);
 
     // Input box
     roundRect(c, inputX, inputY, inputW, inputH, 8);
-    c.fillStyle = "#1A1F28"; c.fill();
+    c.fillStyle = "#1A0E12"; c.fill();
     c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
 
-    c.font = "bold 48px sans-serif";
+    c.font = "bold 48px 'Merriweather', serif";
     c.fillStyle = COL.white;
     c.fillText(state.joinCode, CX, inputY + inputH/2 + 3);
 
@@ -1282,7 +1497,7 @@ function drawLobby(c, now) {
 
     // Error
     if (state.lobbyError) {
-      c.font = "bold 16px sans-serif";
+      c.font = "bold 16px 'Merriweather', serif";
       c.fillStyle = COL.denied;
       c.fillText(state.lobbyError, CX, inputY + inputH + 18);
     }
@@ -1291,24 +1506,24 @@ function drawLobby(c, now) {
     const canStart = state.joinCode.length === 4;
     const bStart = BTN_START_JOIN;
     roundRect(c, bStart.x, bStart.y, bStart.w, bStart.h, bStart.r);
-    c.fillStyle = canStart ? (state.hoverStartJoin ? "#3A5A4A" : "#2A4A3A") : "#1A1A1A";
+    c.fillStyle = canStart ? (state.hoverStartJoin ? "#2A1820" : "#1E1018") : "#1A1A1A";
     c.fill();
     c.strokeStyle = canStart ? (state.hoverStartJoin ? COL.accent : "#667") : "#333";
     c.lineWidth = canStart ? 2 : 1;
     c.stroke();
-    c.font = "bold 16px sans-serif";
+    c.font = "bold 16px 'Merriweather', serif";
     c.fillStyle = canStart ? COL.accent : "#555";
-    c.fillText("Start", bStart.x + bStart.w/2, bStart.y + bStart.h/2);
+    c.fillText("Start", bStart.x + bStart.w/2, bStart.y + bStart.h/2 + 2);
 
     // Back button
     const bBack = BTN_BACK_JOIN;
     roundRect(c, bBack.x, bBack.y, bBack.w, bBack.h, bBack.r);
-    c.fillStyle = state.hoverBackJoin ? "#3A3A3A" : "#2A2A2A";
+    c.fillStyle = state.hoverBackJoin ? "#2A2024" : "#1E1618";
     c.fill();
     c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-    c.font = "16px sans-serif";
+    c.font = "16px 'Merriweather', serif";
     c.fillStyle = "#AAB";
-    c.fillText("Back", bBack.x + bBack.w/2, bBack.y + bBack.h/2);
+    c.fillText("Back", bBack.x + bBack.w/2, bBack.y + bBack.h/2 + 2);
   }
 
   c.restore();
@@ -1321,12 +1536,12 @@ function drawModeSelection(c) {
 
   c.save();
   // Dim
-  c.fillStyle = "rgba(10,14,20,0.75)";
+  c.fillStyle = "rgba(14,8,10,0.75)";
   c.fillRect(0, 0, W, H);
 
   // Title
   const titleSize = Math.max(24, H * 0.067);
-  c.font = `bold ${titleSize}px sans-serif`;
+  c.font = `bold ${titleSize * 1.95}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.goldBase;
   c.fillText("Select Game Mode", CX, H * 0.22);
@@ -1337,38 +1552,99 @@ function drawModeSelection(c) {
   // Regular mode button
   const br = BTN_REGULAR;
   roundRect(c, br.x, br.y, br.w, br.h, br.r);
-  c.fillStyle = state.hoverRegular ? "#3A4A5A" : "#2A3A4A";
+  c.fillStyle = state.hoverRegular ? "#2A1820" : "#1E1018";
   c.fill();
-  c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
-  c.font = `bold ${btnTitleSize}px sans-serif`;
-  c.fillStyle = COL.accent;
-  c.fillText("Regular", CX, br.y + br.h * 0.35);
-  c.font = `${btnSubSize}px sans-serif`;
+  c.strokeStyle = COL.scarletBright; c.lineWidth = 2; c.stroke();
+  c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
+  c.fillStyle = COL.scarletBright;
+  c.fillText("Regular", CX, br.y + br.h * 0.38);
+  c.font = `${btnSubSize}px 'Merriweather', serif`;
   c.fillStyle = "#AAB";
-  c.fillText("Standard game rules", CX, br.y + br.h * 0.7);
+  c.fillText("Standard game rules", CX, br.y + br.h * 0.72);
 
   // Hidden mode button
   const bh = BTN_HIDDEN;
   roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
-  c.fillStyle = state.hoverHidden ? "#4A3A3A" : "#3A2A2A";
+  c.fillStyle = state.hoverHidden ? "#2A2018" : "#1E1810";
   c.fill();
   c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
-  c.font = `bold ${btnTitleSize}px sans-serif`;
+  c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
   c.fillStyle = COL.goldBase;
-  c.fillText("Hidden", CX, bh.y + bh.h * 0.35);
-  c.font = `${btnSubSize}px sans-serif`;
+  c.fillText("Hidden", CX, bh.y + bh.h * 0.38);
+  c.font = `${btnSubSize}px 'Merriweather', serif`;
   c.fillStyle = "#AAB";
-  c.fillText("Each player's 1 & 10 are hidden", CX, bh.y + bh.h * 0.7);
+  c.fillText("Each player's 1 & 10 are hidden", CX, bh.y + bh.h * 0.72);
 
   // Back button (positioned below hidden button)
   const bb = BTN_BACK_MODE;
   roundRect(c, bb.x, bb.y, bb.w, bb.h, bb.r);
-  c.fillStyle = state.hoverBack ? "#3A3A3A" : "#2A2A2A";
+  c.fillStyle = state.hoverBack ? "#2A2024" : "#1E1618";
   c.fill();
   c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-  c.font = "16px sans-serif";
+  c.font = "16px 'Merriweather', serif";
   c.fillStyle = "#AAB";
-  c.fillText("Back", CX, bb.y + bb.h/2);
+  c.fillText("Back", CX, bb.y + bb.h/2 + 2);
+
+  c.restore();
+}
+
+function drawMapSelection(c) {
+  if (state.phase !== "mapSelection") return;
+
+  const {BTN_STANDARD, BTN_RANDOM, BTN_BACK_MAP} = getButtons();
+
+  c.save();
+  // Dim
+  c.fillStyle = "rgba(14,8,10,0.75)";
+  c.fillRect(0, 0, W, H);
+
+  // Title — same style as mode selection
+  const titleSize = Math.max(24, H * 0.067);
+  c.font = `bold ${titleSize * 1.95}px 'Allura', cursive`;
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = COL.scarletBright;
+  c.fillText("Select Map", CX, H * 0.22);
+
+  const btnTitleSize = Math.max(18, H * 0.044);
+  const btnSubSize = Math.max(12, H * 0.026);
+
+  // Standard Map button
+  const bs = BTN_STANDARD;
+  roundRect(c, bs.x, bs.y, bs.w, bs.h, bs.r);
+  c.fillStyle = state.hoverStandard ? "#2A1820" : "#1E1018";
+  c.fill();
+  c.strokeStyle = state.hoverStandard ? COL.accent : "#5A3040";
+  c.lineWidth = 2; c.stroke();
+  c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
+  c.fillStyle = "#DDE";
+  c.fillText("Standard Map", CX, bs.y + bs.h * 0.38);
+  c.font = `${btnSubSize}px 'Merriweather', serif`;
+  c.fillStyle = "#889";
+  c.fillText("Classic triangle layout", CX, bs.y + bs.h * 0.72);
+
+  // Random Map button
+  const br = BTN_RANDOM;
+  roundRect(c, br.x, br.y, br.w, br.h, br.r);
+  c.fillStyle = state.hoverRandom ? "#3A2018" : "#2A1810";
+  c.fill();
+  c.strokeStyle = state.hoverRandom ? COL.goldBase : "#6A4A3A";
+  c.lineWidth = 2; c.stroke();
+  c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
+  c.fillStyle = "#DDE";
+  c.fillText("Random Map", CX, br.y + br.h * 0.38);
+  c.font = `${btnSubSize}px 'Merriweather', serif`;
+  c.fillStyle = "#889";
+  c.fillText("Randomly generated board", CX, br.y + br.h * 0.72);
+
+  // Back button
+  const bb = BTN_BACK_MAP;
+  roundRect(c, bb.x, bb.y, bb.w, bb.h, bb.r);
+  c.fillStyle = state.hoverBackMap ? "#2A2024" : "#1E1618";
+  c.fill();
+  c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+  c.font = "16px 'Merriweather', serif";
+  c.fillStyle = "#AAB";
+  c.fillText("Back", CX, bb.y + bb.h/2 + 2);
 
   c.restore();
 }
@@ -1378,44 +1654,50 @@ function drawRoundResult(c) {
   c.save();
   const sc = state.resultScale;
 
-  c.fillStyle = "rgba(10,14,20,0.5)";
+  c.fillStyle = "rgba(14,8,10,0.5)";
   c.fillRect(0, 0, W, H);
 
   c.translate(CX, CY); c.scale(sc, sc); c.translate(-CX, -CY);
 
-  const pw = 360, ph = 260;
+  const pw = Math.max(280, W * 0.37);
+  const ph = Math.max(200, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
+  c.fillStyle = "rgba(36,20,26,0.95)";
+  c.strokeStyle = COL.goldBase;
+  c.lineWidth = 2;
   roundRect(c, px, py, pw, ph, 12);
-  c.fillStyle = "rgba(30,36,48,0.95)"; c.fill();
-  c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+  c.fill(); c.stroke();
 
-  c.font = "bold 24px sans-serif";
+  const titleSize = Math.max(18, H * 0.04);
+  const scoreSize = Math.max(22, H * 0.055);
+
+  c.font = `bold ${scoreSize}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
-  c.fillStyle = COL.goldenBright;
-  c.fillText(`Round ${state.round} Results`, CX, py + 35);
+  c.fillStyle = COL.scarletBright;
+  c.fillText(`Round ${state.round} Results`, CX, py + titleSize * 2);
 
-  c.font = "bold 30px sans-serif";
+  c.font = `bold ${scoreSize}px 'Merriweather', serif`;
   const myIdx = Net.myIndex;
 
-  // Show scores with YOU/OPPONENT labels
   c.fillStyle = COL.white;
-  c.fillText(`White${myIdx === 0 ? " (You)" : ""}: ${state.roundScores[0]}`, CX, py + ph/2 - 25);
+  c.fillText(`White: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize/2);
   c.fillStyle = "#AAA";
-  c.fillText(`Black${myIdx === 1 ? " (You)" : ""}: ${state.roundScores[1]}`, CX, py + ph/2 + 15);
+  c.fillText(`Black: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize);
 
   if (state.phase === "waitingAdvance") {
-    c.font = "14px sans-serif";
+    const promptSize2 = Math.max(13, H * 0.022);
+    c.font = `${promptSize2}px 'Merriweather', serif`;
     c.fillStyle = "#667";
-    c.fillText("Waiting for opponent...", CX, py + ph - 30);
+    c.fillText("Waiting for opponent...", CX, py + ph - titleSize * 2);
   } else {
     const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
     c.globalAlpha = blink;
     const promptSize2 = Math.max(13, H * 0.022);
-    c.font = `${promptSize2}px sans-serif`;
+    c.font = `${promptSize2}px 'Merriweather', serif`;
     c.fillStyle = COL.accent;
     const contText = state.round < 2 ? "Space / Enter / Click: Next Round" : "Space / Enter / Click: View Winner";
-    c.fillText(contText, CX, py + ph - 35);
+    c.fillText(contText, CX, py + ph - titleSize * 2);
     c.globalAlpha = 1;
   }
 
@@ -1426,15 +1708,18 @@ function drawGameOver(c) {
   if (state.phase !== "gameOver") return;
   c.save();
 
-  c.fillStyle = "rgba(10,14,20,0.7)";
+  c.fillStyle = "rgba(14,8,10,0.7)";
   c.fillRect(0, 0, W, H);
 
-  const pw = 360, ph = 260;
+  const pw = Math.max(280, W * 0.37);
+  const ph = Math.max(200, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
+  c.fillStyle = "rgba(36,20,26,0.95)";
+  c.strokeStyle = COL.goldBase;
+  c.lineWidth = 2;
   roundRect(c, px, py, pw, ph, 12);
-  c.fillStyle = "rgba(30,36,48,0.95)"; c.fill();
-  c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+  c.fill(); c.stroke();
 
   const myIdx = Net.myIndex;
   const winner = state._onlineWinner;
@@ -1443,23 +1728,26 @@ function drawGameOver(c) {
   else if (winner === myIdx) heading = "You Win!";
   else heading = "You Lose";
 
-  c.font = "bold 28px sans-serif";
-  c.textAlign = "center"; c.textBaseline = "middle";
-  c.fillStyle = winner === myIdx ? COL.goldenBright : (winner === -1 ? "#AAB" : COL.denied);
-  c.fillText(heading, CX, py + 40);
+  const titleSize = Math.max(18, H * 0.04);
+  const scoreSize = Math.max(22, H * 0.055);
 
-  c.font = "bold 30px sans-serif";
+  c.font = `bold ${scoreSize}px 'Allura', cursive`;
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = winner === myIdx ? COL.scarletBright : (winner === -1 ? "#AAB" : COL.denied);
+  c.fillText(heading, CX, py + titleSize * 2);
+
+  c.font = `bold ${scoreSize}px 'Merriweather', serif`;
   c.fillStyle = COL.white;
-  c.fillText(`White${myIdx === 0 ? " (You)" : ""}: ${state.scores[0]}`, CX, py + ph/2 - 15);
+  c.fillText(`White: ${state.scores[0]}`, CX, py + ph/2 - scoreSize/2);
   c.fillStyle = "#AAA";
-  c.fillText(`Black${myIdx === 1 ? " (You)" : ""}: ${state.scores[1]}`, CX, py + ph/2 + 25);
+  c.fillText(`Black: ${state.scores[1]}`, CX, py + ph/2 + scoreSize);
 
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   c.globalAlpha = blink;
   const promptSize2 = Math.max(13, H * 0.022);
-  c.font = `${promptSize2}px sans-serif`;
+  c.font = `${promptSize2}px 'Merriweather', serif`;
   c.fillStyle = COL.accent;
-  c.fillText("Space / Enter / Click: Return to Lobby", CX, py + ph - 40);
+  c.fillText("Space / Enter / Click: Return to Lobby", CX, py + ph - titleSize * 2);
   c.globalAlpha = 1;
 
   c.restore();
@@ -1473,13 +1761,13 @@ function drawDisconnected(c, dt) {
     return;
   }
   c.save();
-  c.fillStyle = "rgba(10,14,20,0.8)";
+  c.fillStyle = "rgba(14,8,10,0.8)";
   c.fillRect(0, 0, W, H);
-  c.font = "bold 28px sans-serif";
+  c.font = "bold 28px 'Merriweather', serif";
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.denied;
   c.fillText("Opponent Disconnected", CX, CY - 20);
-  c.font = "18px sans-serif";
+  c.font = "18px 'Merriweather', serif";
   c.fillStyle = "#AAB";
   c.fillText("Returning to lobby...", CX, CY + 20);
   c.restore();
@@ -1488,7 +1776,7 @@ function drawDisconnected(c, dt) {
 function drawGoldFlash(c) {
   if (state.goldFlash > 0) {
     c.save();
-    c.fillStyle = `rgba(245,217,107,${state.goldFlash * 0.18})`;
+    c.fillStyle = `rgba(220,20,60,${state.goldFlash * 0.18})`;
     c.fillRect(0, 0, W, H);
     c.restore();
   }
@@ -1522,6 +1810,30 @@ function pointInRect(px, py, r) {
 
 function handleClick(canvasX, canvasY) {
   const btns = getButtons();
+
+  // Confirmation dialog
+  if (state.phase === "confirm") {
+    const pw = Math.max(250, W * 0.33);
+    const ph = Math.max(150, H * 0.33);
+    const px = CX - pw/2, py = CY - ph/2;
+    const btnW = Math.max(50, W * 0.06);
+    const btnH = Math.max(32, H * 0.06);
+    const btnY = py + ph * 0.56;
+    const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
+    const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
+
+    if (pointInRect(canvasX, canvasY, yesBtn)) {
+      returnToLobby();
+      return;
+    }
+
+    if (pointInRect(canvasX, canvasY, noBtn)) {
+      state.phase = "playing";
+      state.confirmAction = null;
+      return;
+    }
+    return;
+  }
 
   // Lobby
   if (state.phase === "lobby") {
@@ -1560,17 +1872,40 @@ function handleClick(canvasX, canvasY) {
     if (pointInRect(canvasX, canvasY, btns.BTN_REGULAR)) {
       playPlaceClick();
       state.gameMode = "regular";
-      Net.createRoom("regular");
+      state.phase = "mapSelection";
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HIDDEN)) {
       playPlaceClick();
       state.gameMode = "hidden";
-      Net.createRoom("hidden");
+      state.phase = "mapSelection";
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_BACK_MODE)) {
       state.phase = "lobby";
+      return;
+    }
+    return;
+  }
+
+  // Map Selection
+  if (state.phase === "mapSelection") {
+    if (pointInRect(canvasX, canvasY, btns.BTN_STANDARD)) {
+      playPlaceClick();
+      state.mapType = "standard";
+      randomMapData = null;
+      Net.createRoom(state.gameMode, "standard", null);
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.BTN_RANDOM)) {
+      playPlaceClick();
+      state.mapType = "random";
+      generateRandomMap();
+      Net.createRoom(state.gameMode, "random", randomMapData);
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.BTN_BACK_MAP)) {
+      state.phase = "modeSelection";
       return;
     }
     return;
@@ -1619,7 +1954,29 @@ function handleClick(canvasX, canvasY) {
   // Disconnected
   if (state.phase === "disconnected") return;
 
-  // Playing
+  // Playing - check for button clicks
+  if (state.phase === "playing") {
+    const margin = Math.max(16, W * 0.02);
+    const btnW = Math.max(50, W * 0.06);
+    const btnH = Math.max(24, H * 0.045);
+    const btnY = H - margin - btnH;
+    const restartBtn = {x: W - margin * 2 - btnW * 2, y: btnY, w: btnW, h: btnH};
+    const homeBtn = {x: W - margin - btnW, y: btnY, w: btnW, h: btnH};
+
+    if (pointInRect(canvasX, canvasY, restartBtn)) {
+      state.phase = "confirm";
+      state.confirmAction = "restart";
+      return;
+    }
+
+    if (pointInRect(canvasX, canvasY, homeBtn)) {
+      state.phase = "confirm";
+      state.confirmAction = "home";
+      return;
+    }
+  }
+
+  // Playing - game actions
   if (state.phase !== "playing") return;
 
   const myIdx = Net.myIndex;
@@ -1731,8 +2088,43 @@ function handleMouseMove(canvasX, canvasY) {
     state.hoverBack = pointInRect(canvasX, canvasY, btns.BTN_BACK_MODE);
     return;
   }
+  if (state.phase === "mapSelection") {
+    state.hoverStandard = pointInRect(canvasX, canvasY, btns.BTN_STANDARD);
+    state.hoverRandom = pointInRect(canvasX, canvasY, btns.BTN_RANDOM);
+    state.hoverBackMap = pointInRect(canvasX, canvasY, btns.BTN_BACK_MAP);
+    return;
+  }
+
+  // Confirmation dialog hovers
+  if (state.phase === "confirm") {
+    const pw = Math.max(250, W * 0.33);
+    const ph = Math.max(150, H * 0.33);
+    const px = CX - pw/2, py = CY - ph/2;
+    const btnW = Math.max(50, W * 0.06);
+    const btnH = Math.max(32, H * 0.06);
+    const btnY = py + ph * 0.56;
+    const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
+    const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
+
+    state.hoverYes = pointInRect(canvasX, canvasY, yesBtn);
+    state.hoverNo = pointInRect(canvasX, canvasY, noBtn);
+    hoveredSlot = -1;
+    return;
+  }
 
   if (state.phase !== "playing") { hoveredSlot = -1; return; }
+
+  // Playing - button hovers
+  const margin = Math.max(16, W * 0.02);
+  const bw = Math.max(50, W * 0.06);
+  const bh = Math.max(24, H * 0.045);
+  const by = H - margin - bh;
+  const restartBtn = {x: W - margin * 2 - bw * 2, y: by, w: bw, h: bh};
+  const homeBtn = {x: W - margin - bw, y: by, w: bw, h: bh};
+
+  state.hoverRestart = pointInRect(canvasX, canvasY, restartBtn);
+  state.hoverHome = pointInRect(canvasX, canvasY, homeBtn);
+
   const myIdx = Net.myIndex;
   const isMyTurn = state.currentPlayer === myIdx;
   if (!isMyTurn) { hoveredSlot = -1; return; }
@@ -1848,14 +2240,15 @@ function frame(now) {
   drawBackground(ctx);
 
   // Game layers (only when in a game)
-  const inGame = ["playing", "roundResult", "waitingAdvance", "gameOver", "disconnected"].includes(state.phase);
+  const inGame = ["playing", "roundResult", "waitingAdvance", "gameOver", "disconnected", "confirm"].includes(state.phase);
   if (inGame) {
     drawBoard(ctx, now);
-    drawGFrame(ctx, now);
+    if (state.mapType !== "random") drawGFrame(ctx, now);
     drawTrays(ctx, now);
     drawHUD(ctx, now);
     drawRoundResult(ctx);
     drawGameOver(ctx);
+    drawConfirmDialog(ctx);
     drawGoldFlash(ctx);
     drawToasts(ctx, dt * 1000);
     drawDisconnected(ctx, dt);
@@ -1864,6 +2257,7 @@ function frame(now) {
   // Lobby layers
   drawLobby(ctx, now);
   drawModeSelection(ctx);
+  drawMapSelection(ctx);
 
   requestAnimationFrame(frame);
 }
