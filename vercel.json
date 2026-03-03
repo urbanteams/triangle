@@ -5,6 +5,10 @@
   "outputDirectory": ".",
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/triangle/:path*", "destination": "/:path*" },
+    { "source": "/triangle", "destination": "/" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
