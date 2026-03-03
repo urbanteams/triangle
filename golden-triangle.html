@@ -416,6 +416,7 @@ function killTweens(tag) {
 }
 
 function updateTweens(dt) {
+  const doneCallbacks = [];
   for (let i = tweens.length - 1; i >= 0; i--) {
     const t = tweens[i];
     t.elapsed += dt;
@@ -424,10 +425,11 @@ function updateTweens(dt) {
     if (t.obj && t.prop) t.obj[t.prop] = t.from + (t.to - t.from) * p;
     if (t.elapsed >= t.dur) {
       if (t.obj && t.prop) t.obj[t.prop] = t.to;
-      if (t.onDone) t.onDone();
+      if (t.onDone) doneCallbacks.push(t.onDone);
       tweens.splice(i, 1);
     }
   }
+  for (const cb of doneCallbacks) cb();
 }
 
 function easeOut(t) { return 1 - (1-t)*(1-t); }
@@ -488,6 +490,11 @@ function freshState() {
     hoverNo: false,
     hoverRestart: false,
     hoverHome: false,
+    // difficulty select hover states (CPU mode)
+    hoverEasy: false,
+    hoverMedium: false,
+    hoverHard: false,
+    hoverDiffBack: false,
     // map select hover states
     hoverStandard: false,
     hoverRandom: false,
@@ -498,10 +505,27 @@ function freshState() {
 let state = freshState();
 let prevTime = performance.now();
 
+// ── CPU Mode ──────────────────────────────────────────────────
+const CPU_MODE = new URLSearchParams(window.location.search).get("cpu") === "1";
+let cpuDifficulty = null; // "easy", "medium", "hard"
+let cpuThinkTimer = 0;
+let cpuMoveReady = false;
+let cpuSelectedMove = null; // {pieceValue, slotId}
+
+// Override initial phase if CPU mode
+if (CPU_MODE) {
+  state.phase = "difficultySelect";
+}
+
 // ── Hidden Mode Helpers ───────────────────────────────────────
 function shouldHidePiece(pieceOwner, pieceValue) {
   if (state.gameMode !== "hidden") return false;
   if (state.hiddenPiecesRevealed) return false;
+  if (CPU_MODE) {
+    // In CPU mode, only hide CPU's (player 1) hidden pieces from the human
+    if (pieceOwner === 1 && (pieceValue === 1 || pieceValue === 10)) return true;
+    return false;
+  }
   // In hot seat, hide ALL 1 and 10 pieces from both players (shared screen)
   if (pieceValue === 1 || pieceValue === 10) return true;
   return false;
@@ -876,7 +900,12 @@ function drawTrays(ctx, now) {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const isActive = state.currentPlayer === owner && state.phase === "playing";
     ctx.fillStyle = isActive ? COL.scarletBright : (owner === 0 ? "#AAA" : "#666");
-    const label = isActive ? "You" : "Opponent";
+    let label;
+    if (CPU_MODE && owner === 1) {
+      label = isActive ? "CPU thinking..." : "CPU";
+    } else {
+      label = isActive ? "You" : "Opponent";
+    }
     ctx.fillText(label, lx, ly - TRAY_PIECE_S * 1.7);
   }
 
@@ -892,7 +921,9 @@ function drawHUD(ctx, now) {
   const margin = Math.max(16, W * 0.02);
 
   // Turn indicator (top center)
-  const playerName = state.currentPlayer === 0 ? "White" : "Black";
+  const playerName = CPU_MODE
+    ? (state.currentPlayer === 0 ? "White" : "CPU")
+    : (state.currentPlayer === 0 ? "White" : "Black");
   const pulseA = 0.6 + 0.4 * Math.sin(now / 400);
 
   ctx.save();
@@ -915,7 +946,8 @@ function drawHUD(ctx, now) {
   ctx.fillStyle = COL.white;
   ctx.fillText(`White: ${state.scores[0]}`, W - margin, margin);
   ctx.fillStyle = "#999";
-  ctx.fillText(`Black: ${state.scores[1]}`, W - margin, margin + baseFontSize * 1.4);
+  const blackLabel = CPU_MODE ? "CPU" : "Black";
+  ctx.fillText(`${blackLabel}: ${state.scores[1]}`, W - margin, margin + baseFontSize * 1.4);
 
   // Restart and Home buttons
   const btnW = Math.max(50, W * 0.06);
@@ -992,6 +1024,86 @@ function drawMenu(ctx) {
   ctx.font = `bold ${promptSize}px 'Merriweather', serif`;
   ctx.fillStyle = COL.accent;
   ctx.fillText("Press Space / Enter / Click to Start", CX, H * 0.63 + slideY);
+
+  ctx.restore();
+}
+
+// ── Difficulty Selection (CPU Mode) ──────────────────────────
+function getDifficultyButtons() {
+  const bw = Math.max(200, W * 0.27);
+  const bh = Math.max(40, H * 0.09);
+  return {
+    easy:   { x: CX - bw * 0.54, y: H * 0.30, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    medium: { x: CX - bw * 0.54, y: H * 0.46, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    hard:   { x: CX - bw * 0.54, y: H * 0.62, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    back:   { x: CX - bw * 0.3,  y: H * 0.80, w: bw * 0.6,  h: bh * 0.8, r: 8 }
+  };
+}
+
+function drawDifficultySelect(ctx) {
+  if (state.phase !== "difficultySelect") return;
+  ctx.save();
+
+  ctx.fillStyle = "rgba(14,8,10,0.8)";
+  ctx.fillRect(0, 0, W, H);
+
+  const titleSize = Math.max(24, H * 0.067);
+  ctx.font = `bold ${titleSize * 1.95}px 'Allura', cursive`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = COL.goldBase;
+  ctx.fillText("Select Difficulty", CX, H * 0.16);
+
+  const btns = getDifficultyButtons();
+  const btnTitleSize = Math.max(18, H * 0.044);
+  const btnSubSize = Math.max(12, H * 0.026);
+
+  // Easy
+  roundRect(ctx, btns.easy.x, btns.easy.y, btns.easy.w, btns.easy.h, btns.easy.r);
+  ctx.fillStyle = state.hoverEasy ? "#1A2A18" : "#122010";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverEasy ? "#6ABF6A" : "#4A9A4A";
+  ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
+  ctx.fillStyle = "#6ABF6A";
+  ctx.fillText("Easy", CX, btns.easy.y + btns.easy.h * 0.38);
+  ctx.font = `${btnSubSize}px 'Merriweather', serif`;
+  ctx.fillStyle = "#889";
+  ctx.fillText("A Silly Goose", CX, btns.easy.y + btns.easy.h * 0.72);
+
+  // Medium
+  roundRect(ctx, btns.medium.x, btns.medium.y, btns.medium.w, btns.medium.h, btns.medium.r);
+  ctx.fillStyle = state.hoverMedium ? "#2A2018" : "#1E1810";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverMedium ? COL.goldBase : "#8A6A22";
+  ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
+  ctx.fillStyle = COL.goldBase;
+  ctx.fillText("Medium", CX, btns.medium.y + btns.medium.h * 0.38);
+  ctx.font = `${btnSubSize}px 'Merriweather', serif`;
+  ctx.fillStyle = "#889";
+  ctx.fillText("A Stepping Stone", CX, btns.medium.y + btns.medium.h * 0.72);
+
+  // Hard
+  roundRect(ctx, btns.hard.x, btns.hard.y, btns.hard.w, btns.hard.h, btns.hard.r);
+  ctx.fillStyle = state.hoverHard ? "#2A1820" : "#1E1018";
+  ctx.fill();
+  ctx.strokeStyle = state.hoverHard ? COL.scarletBright : "#8B0A1E";
+  ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
+  ctx.fillStyle = COL.scarletBright;
+  ctx.fillText("Hard", CX, btns.hard.y + btns.hard.h * 0.38);
+  ctx.font = `${btnSubSize}px 'Merriweather', serif`;
+  ctx.fillStyle = "#889";
+  ctx.fillText("A Worthy Adversary", CX, btns.hard.y + btns.hard.h * 0.72);
+
+  // Back
+  roundRect(ctx, btns.back.x, btns.back.y, btns.back.w, btns.back.h, btns.back.r);
+  ctx.fillStyle = state.hoverDiffBack ? "#2A2024" : "#1E1618";
+  ctx.fill();
+  ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = "16px 'Merriweather', serif";
+  ctx.fillStyle = "#AAB";
+  ctx.fillText("Back", CX, btns.back.y + btns.back.h / 2 + 2);
 
   ctx.restore();
 }
@@ -1144,11 +1256,12 @@ function drawRoundResult(ctx) {
   ctx.fillStyle = COL.scarletBright;
   ctx.fillText(`Round ${state.round} Results`, CX, py + titleSize * 2);
 
+  const rrBlackLabel = CPU_MODE ? "CPU" : "Black";
   ctx.font = `bold ${scoreSize}px 'Merriweather', serif`;
   ctx.fillStyle = COL.white;
   ctx.fillText(`White: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize/2);
   ctx.fillStyle = "#AAA";
-  ctx.fillText(`Black: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize);
+  ctx.fillText(`${rrBlackLabel}: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize);
 
   // Continue prompt (same distance from bottom as title from top)
   const promptSize2 = Math.max(13, H * 0.022);
@@ -1182,9 +1295,15 @@ function drawGameOver(ctx) {
 
   // Winner heading
   let winner;
-  if (state.scores[0] > state.scores[1]) winner = "White Wins!";
-  else if (state.scores[1] > state.scores[0]) winner = "Black Wins!";
-  else winner = "Draw!";
+  if (CPU_MODE) {
+    if (state.scores[0] > state.scores[1]) winner = "You Win!";
+    else if (state.scores[1] > state.scores[0]) winner = "CPU Wins!";
+    else winner = "Draw!";
+  } else {
+    if (state.scores[0] > state.scores[1]) winner = "White Wins!";
+    else if (state.scores[1] > state.scores[0]) winner = "Black Wins!";
+    else winner = "Draw!";
+  }
 
   const titleSize = Math.max(18, H * 0.04);
   const scoreSize = Math.max(22, H * 0.055);
@@ -1195,11 +1314,12 @@ function drawGameOver(ctx) {
   ctx.fillText(winner, CX, py + titleSize * 2);
 
   // Final scores large and centered
+  const goBlackLabel = CPU_MODE ? "CPU" : "Black";
   ctx.font = `bold ${scoreSize}px 'Merriweather', serif`;
   ctx.fillStyle = COL.white;
   ctx.fillText(`White: ${state.scores[0]}`, CX, py + ph/2 - scoreSize/2);
   ctx.fillStyle = "#AAA";
-  ctx.fillText(`Black: ${state.scores[1]}`, CX, py + ph/2 + scoreSize);
+  ctx.fillText(`${goBlackLabel}: ${state.scores[1]}`, CX, py + ph/2 + scoreSize);
 
   // Continue (same distance from bottom as title from top)
   const promptSize2 = Math.max(13, H * 0.022);
@@ -1249,6 +1369,11 @@ function startMatch() {
   state.currentPlayer = state.firstPlayer;
   state.round = 1;
   tweens = [];
+
+  // Reset CPU state
+  cpuThinkTimer = 0;
+  cpuMoveReady = false;
+  cpuSelectedMove = null;
 
   // Set up map
   if (state.mapType === "random") {
@@ -1301,6 +1426,11 @@ function startRound() {
   killTweens("placement");
   killTweens("shake");
   killTweens("reveal");
+
+  // Reset CPU state
+  cpuThinkTimer = 0;
+  cpuMoveReady = false;
+  cpuSelectedMove = null;
 }
 
 function placePiece(slotId) {
@@ -1486,6 +1616,34 @@ function pointInRect(px, py, r) {
 }
 
 function handleClick(canvasX, canvasY) {
+  // Difficulty select (CPU mode)
+  if (state.phase === "difficultySelect") {
+    const btns = getDifficultyButtons();
+    if (pointInRect(canvasX, canvasY, btns.easy)) {
+      playPlaceClick();
+      cpuDifficulty = "easy";
+      state.phase = "mapSelect";
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.medium)) {
+      playPlaceClick();
+      cpuDifficulty = "medium";
+      state.phase = "mapSelect";
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.hard)) {
+      playPlaceClick();
+      cpuDifficulty = "hard";
+      state.phase = "mapSelect";
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.back)) {
+      window.location.href = "index.html";
+      return;
+    }
+    return;
+  }
+
   // Confirmation dialog
   if (state.phase === "confirm") {
     const pw = Math.max(250, W * 0.33);
@@ -1501,8 +1659,12 @@ function handleClick(canvasX, canvasY) {
       // Execute the confirmed action
       if (state.confirmAction === "restart") {
         state = freshState();
+        if (CPU_MODE) state.phase = "difficultySelect";
         tweens = [];
         randomMapData = null;
+        cpuThinkTimer = 0;
+        cpuMoveReady = false;
+        cpuSelectedMove = null;
         resize();
       } else if (state.confirmAction === "home") {
         window.location.href = "index.html";
@@ -1533,7 +1695,11 @@ function handleClick(canvasX, canvasY) {
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.back)) {
-      window.location.href = "index.html";
+      if (CPU_MODE) {
+        state.phase = "difficultySelect";
+      } else {
+        window.location.href = "index.html";
+      }
       return;
     }
     return;
@@ -1580,6 +1746,9 @@ function handleClick(canvasX, canvasY) {
 
   // Playing - game actions
   if (state.phase !== "playing") return;
+
+  // Block human input during CPU's turn
+  if (isCPUTurn()) return;
 
   // Account for camera zoom
   const zoom = state.cameraZoom;
@@ -1698,6 +1867,17 @@ function handleMouseMove(canvasX, canvasY) {
     return;
   }
 
+  // Difficulty select hovers (CPU mode)
+  if (state.phase === "difficultySelect") {
+    const btns = getDifficultyButtons();
+    state.hoverEasy = pointInRect(canvasX, canvasY, btns.easy);
+    state.hoverMedium = pointInRect(canvasX, canvasY, btns.medium);
+    state.hoverHard = pointInRect(canvasX, canvasY, btns.hard);
+    state.hoverDiffBack = pointInRect(canvasX, canvasY, btns.back);
+    hoveredSlot = -1;
+    return;
+  }
+
   // Map select hovers
   if (state.phase === "mapSelect") {
     const btns = getMenuButtons();
@@ -1719,6 +1899,9 @@ function handleMouseMove(canvasX, canvasY) {
 
     state.hoverRestart = pointInRect(canvasX, canvasY, restartBtn);
     state.hoverHome = pointInRect(canvasX, canvasY, homeBtn);
+
+    // No board hover during CPU's turn
+    if (isCPUTurn()) { hoveredSlot = -1; return; }
 
     const zoom = state.cameraZoom;
     const adjX = CX + (canvasX - CX) / zoom;
@@ -1787,13 +1970,327 @@ document.addEventListener("keydown", (e) => {
     }
   }
 
-  // Escape to go back to lobby
+  // Escape to go back
   if (key === "Escape") {
-    if (state.phase === "mapSelect") {
+    if (state.phase === "difficultySelect") {
       window.location.href = "index.html";
+    } else if (state.phase === "mapSelect") {
+      if (CPU_MODE) {
+        state.phase = "difficultySelect";
+      } else {
+        window.location.href = "index.html";
+      }
     }
   }
 });
+
+// ── CPU AI ─────────────────────────────────────────────────────
+function isCPUTurn() {
+  return CPU_MODE && state.phase === "playing" && state.currentPlayer === 1;
+}
+
+function updateCPU(dt) {
+  if (!isCPUTurn()) {
+    cpuThinkTimer = 0;
+    cpuMoveReady = false;
+    cpuSelectedMove = null;
+    return;
+  }
+
+  if (!cpuMoveReady) {
+    cpuThinkTimer += dt * 1000;
+    const thinkDelay = 400 + Math.random() * 400;
+    if (cpuThinkTimer >= thinkDelay) {
+      cpuSelectedMove = computeCPUMove();
+      cpuMoveReady = true;
+      cpuThinkTimer = 0;
+    }
+    return;
+  }
+
+  // Execute move
+  if (cpuSelectedMove) {
+    state.selectedPiece = { owner: 1, value: cpuSelectedMove.pieceValue };
+    placePiece(cpuSelectedMove.slotId);
+  }
+  cpuMoveReady = false;
+  cpuSelectedMove = null;
+  cpuThinkTimer = 0;
+}
+
+function computeCPUMove() {
+  if (cpuDifficulty === "easy") return cpuMoveEasy();
+  if (cpuDifficulty === "medium") return cpuMoveMedium();
+  return cpuMoveHard();
+}
+
+function getAvailablePieces() {
+  return state.blackPieces.filter(p => !p.used);
+}
+
+function getEmptySlots() {
+  const empty = [];
+  for (let i = 0; i < 21; i++) {
+    if (state.board[i] == null) empty.push(i);
+  }
+  return empty;
+}
+
+// ── Easy AI: Weak heuristic ─────────────────────────────────────
+function cpuMoveEasy() {
+  const pieces = getAvailablePieces();
+  const slots = getEmptySlots();
+  if (pieces.length === 0 || slots.length === 0) return null;
+
+  let bestScore = -Infinity;
+  let bestMove = null;
+
+  for (const piece of pieces) {
+    for (const slotId of slots) {
+      let score = 0;
+      const adj = ADJ[slotId];
+
+      // Weaker golden slot awareness — avoids the worst blunders
+      const delta = goldenSlotDelta(slotId);
+      score -= delta * 1.2;
+
+      // Slight preference for placing near empty slots
+      let emptyNeighbors = 0;
+      for (const a of adj) {
+        if (state.board[a] == null) emptyNeighbors++;
+      }
+      score += emptyNeighbors * 0.5;
+
+      // More noise — makes suboptimal choices often
+      score += Math.random() * 6;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = { pieceValue: piece.value, slotId };
+      }
+    }
+  }
+
+  return bestMove;
+}
+
+// ── Shared AI Helpers ──────────────────────────────────────────
+// Calculate the golden slot value for an empty slot from CPU's perspective.
+// Positive = good for CPU if this becomes golden, negative = good for opponent.
+function goldenSlotDelta(slotId) {
+  let myVal = 0, oppVal = 0;
+  for (const a of ADJ[slotId]) {
+    if (state.board[a]) {
+      if (state.board[a].owner === 1) myVal += state.board[a].value;
+      else oppVal += state.board[a].value;
+    }
+  }
+  return myVal - oppVal;
+}
+
+// ── Medium AI: Heuristic scoring ───────────────────────────────
+function cpuMoveMedium() {
+  const pieces = getAvailablePieces();
+  const slots = getEmptySlots();
+  if (pieces.length === 0 || slots.length === 0) return null;
+
+  let bestScore = -Infinity;
+  let bestMove = null;
+
+  for (const piece of pieces) {
+    for (const slotId of slots) {
+      let score = 0;
+      const adj = ADJ[slotId];
+
+      // ── 1. GOLDEN SLOT SACRIFICE / DENIAL (most important) ──
+      // By placing here, this slot can never be golden.
+      // If this slot being golden favors US (our pieces surround it) → penalty.
+      // If it favors OPPONENT (their pieces surround it) → bonus.
+      const delta = goldenSlotDelta(slotId);
+      score -= delta * 3.0;
+
+      // ── 2. PIECE SCORING POTENTIAL ──
+      // Our placed piece scores if an adjacent empty slot becomes golden.
+      let emptyNeighbors = 0;
+      for (const a of adj) {
+        if (state.board[a] == null) emptyNeighbors++;
+      }
+      // Weight by probability: each empty slot has ~1/totalEmpty chance of being golden
+      const slotsAfter = slots.length - 1; // one fewer empty after we place
+      if (slotsAfter > 0) {
+        score += piece.value * emptyNeighbors * (1.0 / slotsAfter) * 2.0;
+      }
+
+      // ── 3. THREAT CREATION ──
+      // Placing here changes the golden delta of neighboring empty slots.
+      // Our piece makes neighboring golden slots better for us.
+      for (const a of adj) {
+        if (state.board[a] != null) continue;
+        // Adding our piece.value to this neighbor's golden delta
+        // That makes it more of a threat for the opponent to deal with
+        score += piece.value * 0.3;
+      }
+
+      // ── 4. ADJACENCY PREFERENCE ──
+      // Mild preference for high-adjacency slots (more connected = more impactful)
+      score += adj.length * 0.5;
+
+      // ── 5. NOISE ──
+      score += Math.random() * 1.5;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = { pieceValue: piece.value, slotId };
+      }
+    }
+  }
+
+  return bestMove;
+}
+
+// ── Hard AI: Strategic ─────────────────────────────────────────
+function cpuMoveHard() {
+  const pieces = getAvailablePieces();
+  const slots = getEmptySlots();
+  if (pieces.length === 0 || slots.length === 0) return null;
+
+  // 20th placement: calculate exact outcome for each option
+  if (slots.length === 2 && pieces.length === 1) {
+    return cpuMoveLastPiece(pieces[0], slots);
+  }
+
+  let bestScore = -Infinity;
+  let bestMove = null;
+
+  for (const piece of pieces) {
+    for (const slotId of slots) {
+      const score = evaluateHardMove(piece, slotId, pieces, slots);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = { pieceValue: piece.value, slotId };
+      }
+    }
+  }
+
+  return bestMove;
+}
+
+function cpuMoveLastPiece(piece, slots) {
+  // Two empty slots, place in one, other becomes golden
+  let bestDelta = -Infinity;
+  let bestSlot = slots[0];
+
+  for (let i = 0; i < 2; i++) {
+    const placeSlot = slots[i];
+    const goldenSlot = slots[1 - i];
+
+    // Score if goldenSlot becomes the golden triangle
+    let myScore = 0, oppScore = 0;
+    for (const a of ADJ[goldenSlot]) {
+      if (a === placeSlot) {
+        // This is the piece we're placing
+        myScore += piece.value;
+      } else if (state.board[a]) {
+        if (state.board[a].owner === 1) myScore += state.board[a].value;
+        else oppScore += state.board[a].value;
+      }
+    }
+    const delta = myScore - oppScore;
+    if (delta > bestDelta) {
+      bestDelta = delta;
+      bestSlot = placeSlot;
+    }
+  }
+
+  return { pieceValue: piece.value, slotId: bestSlot };
+}
+
+function evaluateHardMove(piece, slotId, allPieces, allSlots) {
+  let score = 0;
+  const adj = ADJ[slotId];
+  const adjCount = adj.length;
+  const remainingEmpty = allSlots.filter(s => s !== slotId);
+  const slotsAfter = remainingEmpty.length;
+
+  // ── 1. GOLDEN SLOT SACRIFICE / DENIAL ──
+  // By placing here, this slot is permanently removed as a golden candidate.
+  // delta > 0 → golden here favors us → DON'T fill (penalty)
+  // delta < 0 → golden here favors opponent → DO fill (bonus)
+  const delta = goldenSlotDelta(slotId);
+  score -= delta * 3.5;
+
+  // Stronger weight in late game when fewer candidates remain
+  if (slotsAfter <= 5) {
+    score -= delta * 2.0;
+  }
+
+  // ── 2. PIECE SCORING POTENTIAL ──
+  // This piece scores piece.value if any adjacent empty slot becomes golden.
+  let emptyNeighbors = 0;
+  for (const a of adj) {
+    if (state.board[a] == null && a !== slotId) emptyNeighbors++;
+  }
+  if (slotsAfter > 0) {
+    score += piece.value * emptyNeighbors * (1.0 / slotsAfter) * 2.5;
+  }
+
+  // ── 3. GOLDEN LANDSCAPE IMPACT ──
+  // How does placing here change the golden delta of remaining empty slots?
+  // Our piece adds to CPU's scoring at each neighboring empty slot if it becomes golden.
+  // This is good: it creates threats the opponent must defuse.
+  for (const a of adj) {
+    if (state.board[a] != null || a === slotId) continue;
+    // Current delta for neighbor
+    const neighborDelta = goldenSlotDelta(a);
+    // After placing our piece, this neighbor's delta increases by piece.value
+    const newDelta = neighborDelta + piece.value;
+    // Improvement from our perspective
+    score += (newDelta - neighborDelta) * 0.4;
+    // Extra bonus if this pushes the neighbor into strong positive territory
+    // (creates a new threat the opponent must deal with)
+    if (newDelta > 10 && neighborDelta <= 10) score += 2.0;
+  }
+
+  // ── 4. PIECE ECONOMY ──
+  const gameProgress = state.turnCount / 20;
+  // Early game: save high-value pieces for when board is more developed
+  if (gameProgress < 0.35 && piece.value >= 8) {
+    score -= (piece.value - 7) * 2.5;
+  }
+  // Late game: use high-value pieces where they'll score
+  if (gameProgress > 0.65 && piece.value >= 7) {
+    score += piece.value * emptyNeighbors * 0.3;
+  }
+
+  // ── 5. EDGE PENALTY ──
+  // 1-neighbor edge slots rarely contribute to scoring
+  if (adjCount === 1 && piece.value >= 6) {
+    score -= piece.value * 2.0;
+  }
+
+  // ── 6. DENY OPPONENT THREATS ──
+  // Bonus for filling slots where opponent's pieces would score heavily
+  for (const a of adj) {
+    if (state.board[a] != null || a === slotId) continue;
+    // Check if opponent has high value around this empty neighbor
+    let oppAroundNeighbor = 0;
+    for (const aa of ADJ[a]) {
+      if (aa === slotId) continue;
+      if (state.board[aa] && state.board[aa].owner === 0) {
+        oppAroundNeighbor += state.board[aa].value;
+      }
+    }
+    if (oppAroundNeighbor >= 12) {
+      // Placing near a slot that heavily favors opponent is defensive
+      score += piece.value * 0.2;
+    }
+  }
+
+  // ── 7. NOISE ──
+  score += Math.random() * 0.8;
+
+  return score;
+}
 
 // ── Main Loop ──────────────────────────────────────────────────
 function frame(now) {
@@ -1804,6 +2301,7 @@ function frame(now) {
   updateShakeTweens(now);
   updateSpecks(dt);
   updateFloatLabels(dt);
+  if (CPU_MODE) updateCPU(dt);
 
   // Clear at native resolution, then set logical coordinate transform
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1827,6 +2325,7 @@ function frame(now) {
   // 5. UI overlays
   drawHUD(ctx, now);
   drawMenu(ctx);
+  if (CPU_MODE) drawDifficultySelect(ctx);
   drawMapSelect(ctx);
   drawRoundResult(ctx);
   drawGameOver(ctx);
