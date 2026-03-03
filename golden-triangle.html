@@ -1059,12 +1059,12 @@ function drawDifficultySelect(ctx) {
 
   // Easy
   roundRect(ctx, btns.easy.x, btns.easy.y, btns.easy.w, btns.easy.h, btns.easy.r);
-  ctx.fillStyle = state.hoverEasy ? "#1A2A18" : "#122010";
+  ctx.fillStyle = state.hoverEasy ? "#2A2A30" : "#1E1E24";
   ctx.fill();
-  ctx.strokeStyle = state.hoverEasy ? "#6ABF6A" : "#4A9A4A";
+  ctx.strokeStyle = COL.accent;
   ctx.lineWidth = 2; ctx.stroke();
   ctx.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
-  ctx.fillStyle = "#6ABF6A";
+  ctx.fillStyle = COL.accent;
   ctx.fillText("Easy", CX, btns.easy.y + btns.easy.h * 0.38);
   ctx.font = `${btnSubSize}px 'Merriweather', serif`;
   ctx.fillStyle = "#889";
