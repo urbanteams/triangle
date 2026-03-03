@@ -328,6 +328,7 @@ function addTween(obj, prop, from, to, dur, ease, onDone, tag) {
 }
 function killTweens(tag) { tweens = tweens.filter(t => t.tag !== tag); }
 function updateTweens(dt) {
+  const doneCallbacks = [];
   for (let i = tweens.length - 1; i >= 0; i--) {
     const t = tweens[i];
     t.elapsed += dt;
@@ -336,10 +337,11 @@ function updateTweens(dt) {
     if (t.obj && t.prop) t.obj[t.prop] = t.from + (t.to - t.from) * p;
     if (t.elapsed >= t.dur) {
       if (t.obj && t.prop) t.obj[t.prop] = t.to;
-      if (t.onDone) t.onDone();
+      if (t.onDone) doneCallbacks.push(t.onDone);
       tweens.splice(i, 1);
     }
   }
+  for (const cb of doneCallbacks) cb();
 }
 function easeOut(t) { return 1-(1-t)*(1-t); }
 function easeInOut(t) { return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; }
@@ -684,6 +686,7 @@ function freshState() {
     hoverCreate: false,
     hoverJoin: false,
     hoverHotSeat: false,
+    hoverCPU: false,
     hoverBack: false,
     hoverHowTo: false,
     howToExpanded: false,
@@ -1303,14 +1306,21 @@ function roundRect(c, x, y, w, h, r) {
 function getButtons() {
   const bw = Math.max(200, W * 0.27);
   const bh = Math.max(40, H * 0.09);
-  const by = H * 0.43;
   const spacing = Math.max(50, H * 0.12);
+  const titleSize = Math.max(52, Math.min(H * 0.22, 160));
+  const gapTitleBtns = H * 0.14;
+  const contentH = titleSize / 2 + gapTitleBtns + spacing * 3.9 + bh * 0.6;
+  const titleY = (H - contentH) / 2 + titleSize / 2;
+  const by = titleY + gapTitleBtns;
   return {
+    titleY,
+    titleSize,
     BTN_CREATE: { x: CX - bw/2, y: by, w: bw, h: bh, r: 10 },
     BTN_JOIN: { x: CX - bw/2, y: by + spacing, w: bw, h: bh, r: 10 },
-    BTN_HOTSEAT: { x: CX - bw/2, y: by + spacing * 2, w: bw, h: bh, r: 10 },
+    BTN_CPU: { x: CX - bw/2, y: by + spacing * 2, w: bw, h: bh, r: 10 },
+    BTN_HOTSEAT: { x: CX - bw/2, y: by + spacing * 3, w: bw, h: bh, r: 10 },
     BTN_BACK: { x: CX - bw * 0.3, y: by + spacing * 2, w: bw * 0.6, h: bh * 0.8, r: 8 },
-    BTN_HOWTO: { x: CX - bw * 0.3, y: by + spacing * 2.9, w: bw * 0.6, h: bh * 0.6, r: 6 },
+    BTN_HOWTO: { x: CX - bw * 0.3, y: by + spacing * 3.9, w: bw * 0.6, h: bh * 0.6, r: 6 },
     BTN_REGULAR: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_HIDDEN: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_BACK_MODE: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 },
@@ -1325,7 +1335,7 @@ function getButtons() {
 function drawLobby(c, now) {
   if (state.phase !== "lobby" && state.phase !== "waiting" && state.phase !== "joining") return;
 
-  const {BTN_CREATE, BTN_JOIN, BTN_HOTSEAT, BTN_HOWTO, BTN_BACK, BTN_START_JOIN, BTN_BACK_JOIN} = getButtons();
+  const {BTN_CREATE, BTN_JOIN, BTN_HOTSEAT, BTN_CPU, BTN_HOWTO, BTN_BACK, BTN_START_JOIN, BTN_BACK_JOIN, titleY, titleSize} = getButtons();
 
   c.save();
   // Dim
@@ -1333,11 +1343,10 @@ function drawLobby(c, now) {
   c.fillRect(0, 0, W, H);
 
   // Title
-  const titleSize = Math.max(52, Math.min(H * 0.22, 160));
   c.font = `${titleSize}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.scarletBright;
-  c.fillText("Scarlet Triangle", CX, H * 0.29);
+  c.fillText("Scarlet Triangle", CX, titleY);
 
   const btnFontSize = Math.max(16, H * 0.04);
 
@@ -1362,6 +1371,16 @@ function drawLobby(c, now) {
     c.fillStyle = COL.accent;
     c.fillText("Join Game", CX, bj.y + bj.h/2 + 2);
 
+    // vs CPU button (bronze)
+    const bcpu = BTN_CPU;
+    roundRect(c, bcpu.x, bcpu.y, bcpu.w, bcpu.h, bcpu.r);
+    c.fillStyle = state.hoverCPU ? "#3A2018" : "#2A1810";
+    c.fill();
+    c.strokeStyle = "#C8956E"; c.lineWidth = 2; c.stroke();
+    c.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+    c.fillStyle = "#B08060";
+    c.fillText("vs CPU", CX, bcpu.y + bcpu.h/2 + 2);
+
     // Hot Seat button (scarlet)
     const bh = BTN_HOTSEAT;
     roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
@@ -1376,7 +1395,7 @@ function drawLobby(c, now) {
     if (state.lobbyError) {
       c.font = `bold ${btnFontSize * 0.73}px 'Merriweather', serif`;
       c.fillStyle = COL.denied;
-      c.fillText(state.lobbyError, CX, H * 0.78);
+      c.fillText(state.lobbyError, CX, (BTN_HOTSEAT.y + BTN_HOTSEAT.h + BTN_HOWTO.y) / 2);
     }
 
     // How to Play toggle
@@ -1431,7 +1450,7 @@ function drawLobby(c, now) {
   }
   else if (state.phase === "waiting") {
     // Waiting for opponent — center content between title bottom and Cancel button top
-    const titleBottom = H * 0.29 + titleSize / 2;
+    const titleBottom = titleY + titleSize / 2;
     const midY = titleBottom + (BTN_BACK.y - titleBottom) / 2;
 
     c.font = "bold 24px 'Merriweather', serif";
@@ -1461,7 +1480,7 @@ function drawLobby(c, now) {
   }
   else if (state.phase === "joining") {
     // Center content between title bottom and buttons top
-    const titleBottom = H * 0.29 + titleSize / 2;
+    const titleBottom = titleY + titleSize / 2;
     const btnsTop = BTN_START_JOIN.y;
     const inputW = 240, inputH = 60;
     const labelH = 24, gap = 12;
@@ -1861,6 +1880,11 @@ function handleClick(canvasX, canvasY) {
       window.location.href = "golden-triangle.html";
       return;
     }
+    if (pointInRect(canvasX, canvasY, btns.BTN_CPU)) {
+      playPlaceClick();
+      window.location.href = "golden-triangle.html?cpu=1";
+      return;
+    }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOWTO)) {
       state.howToExpanded = !state.howToExpanded;
       return;
@@ -2071,6 +2095,7 @@ function handleMouseMove(canvasX, canvasY) {
     state.hoverCreate = pointInRect(canvasX, canvasY, btns.BTN_CREATE);
     state.hoverJoin = pointInRect(canvasX, canvasY, btns.BTN_JOIN);
     state.hoverHotSeat = pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT);
+    state.hoverCPU = pointInRect(canvasX, canvasY, btns.BTN_CPU);
     state.hoverHowTo = pointInRect(canvasX, canvasY, btns.BTN_HOWTO);
     return;
   }
