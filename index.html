@@ -1508,8 +1508,9 @@ function drawLobby(c, now) {
     if (state.joinCode.length < 4) {
       const blink = Math.sin(now / 400) > 0 ? 1 : 0;
       if (blink) {
-        const charW = 28;
-        const cursorX = CX + (state.joinCode.length - 2) * charW + charW/2;
+        c.font = "bold 48px 'Merriweather', serif";
+        const textW = c.measureText(state.joinCode).width;
+        const cursorX = CX + textW / 2 + 4;
         c.fillStyle = COL.accent;
         c.fillRect(cursorX, inputY + 12, 3, inputH - 24);
       }
@@ -1569,27 +1570,27 @@ function drawModeSelection(c) {
   const btnTitleSize = Math.max(18, H * 0.044);
   const btnSubSize = Math.max(12, H * 0.026);
 
-  // Regular mode button
+  // Regular mode button (silver, like Join Game)
   const br = BTN_REGULAR;
   roundRect(c, br.x, br.y, br.w, br.h, br.r);
-  c.fillStyle = state.hoverRegular ? "#2A1820" : "#1E1018";
+  c.fillStyle = state.hoverRegular ? "#2A2A30" : "#1E1E24";
   c.fill();
-  c.strokeStyle = COL.scarletBright; c.lineWidth = 2; c.stroke();
+  c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
   c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
-  c.fillStyle = COL.scarletBright;
+  c.fillStyle = COL.accent;
   c.fillText("Regular", CX, br.y + br.h * 0.38);
   c.font = `${btnSubSize}px 'Merriweather', serif`;
   c.fillStyle = "#AAB";
   c.fillText("Standard game rules", CX, br.y + br.h * 0.72);
 
-  // Hidden mode button
+  // Hidden mode button (red/scarlet)
   const bh = BTN_HIDDEN;
   roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
-  c.fillStyle = state.hoverHidden ? "#2A2018" : "#1E1810";
+  c.fillStyle = state.hoverHidden ? "#2A1820" : "#1E1018";
   c.fill();
-  c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+  c.strokeStyle = COL.scarletBright; c.lineWidth = 2; c.stroke();
   c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
-  c.fillStyle = COL.goldBase;
+  c.fillStyle = COL.scarletBright;
   c.fillText("Hidden", CX, bh.y + bh.h * 0.38);
   c.font = `${btnSubSize}px 'Merriweather', serif`;
   c.fillStyle = "#AAB";
