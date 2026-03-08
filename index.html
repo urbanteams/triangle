@@ -6,7 +6,7 @@
 <base href="/triangle/">
 <title>Scarlet Triangle - Online</title>
 <link href="https://fonts.googleapis.com/css2?family=Allura&family=Merriweather:wght@400;700&display=block" rel="stylesheet">
-<!-- Firebase SDK -->
+<link href="https://fonts.cdnfonts.com/css/vcr-osd-mono" rel="stylesheet"><!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 <script src="firebase-config.js"></script>
@@ -40,10 +40,39 @@ const COL = {
 
 // ── Audio ─────────────────────────────────────────────────────
 let audioCtx = null;
+const sfxBuffers = {};
 
 function ensureAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+function loadSFX(name, url) {
+  fetch(url).then(r => r.arrayBuffer()).then(buf => {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return ctx.decodeAudioData(buf);
+  }).then(decoded => { sfxBuffers[name] = decoded; }).catch(() => {});
+}
+
+loadSFX("keyclick", "keyclick.mp3");
+loadSFX("arcade2", "arcade2.mp3");
+loadSFX("arcade4", "arcade4.mp3");
+
+function playSFX(name, volume) {
+  ensureAudio();
+  const buf = sfxBuffers[name];
+  if (!buf) return;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  if (volume !== undefined) {
+    const gain = audioCtx.createGain();
+    gain.gain.value = volume;
+    gain.connect(audioCtx.destination);
+    src.connect(gain);
+  } else {
+    src.connect(audioCtx.destination);
+  }
+  src.start();
 }
 
 function playPlaceClick() {
@@ -263,8 +292,8 @@ function resize() {
   if (useWide) {
     CY = hudH + availH / 2;
     const sideMargin = (W - 7 * S) / 2;
-    TRAY_WHITE_CX = sideMargin / 2;
-    TRAY_BLACK_CX = W - sideMargin / 2;
+    TRAY_WHITE_CX = sideMargin / 2 + 12;
+    TRAY_BLACK_CX = W - sideMargin / 2 - 12;
     TRAY_WHITE_CY = CY - S * 1.2;
     TRAY_BLACK_CY = CY - S * 1.2;
   } else {
@@ -287,7 +316,7 @@ function resize() {
   specks.length = 0;
   const speckCount = Math.round((W * H) / 25000);
   for (let i = 0; i < speckCount; i++) {
-    specks.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8,r:Math.random()*1.5+0.5,a:Math.random()*0.3+0.1});
+    specks.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8,r:Math.random()*2.2+0.8,a:Math.random()*0.5+0.25});
   }
 }
 window.addEventListener("resize", resize);
@@ -847,6 +876,9 @@ function continueRevealOnline(goldenSlot) {
 
   // Float labels
   const labelStart = 200 + scoringPieces.length * 160;
+  if (scoringPieces.length > 0) {
+    setTimeout(() => { playSFX("arcade2"); }, labelStart);
+  }
   scoringPieces.forEach((sp) => {
     setTimeout(() => {
       if (state.phase !== "playing" && state.phase !== "roundResult") return;
@@ -866,6 +898,7 @@ function continueRevealOnline(goldenSlot) {
 function showOnlineGameOver(totalScores, winner) {
   state.scores = totalScores;
   state.phase = "gameOver";
+  playSFX("arcade4");
   state._onlineWinner = winner; // -1=draw, 0=white, 1=black
 }
 
@@ -948,10 +981,10 @@ function drawBevelTri(c, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, lab
     c.strokeStyle=shCol; c.lineWidth=4; c.stroke();
   }
   if (label !== undefined && label !== null) {
-    const fontSize = Math.max(16, s * 0.42)|0;
-    c.font = `bold ${fontSize}px sans-serif`;
+    const fontSize = Math.max(14, s * 0.38)|0;
+    c.font = `${fontSize}px 'VCR OSD Mono', monospace`;
     c.textAlign = "center"; c.textBaseline = "middle";
-    const labelOff = ori === "up" ? s*0.08 : -s*0.04;
+    const labelOff = 0;
     c.fillStyle = labelCol;
     // Show "?" if hidden, otherwise show the number
     const displayText = isHidden ? "?" : String(label);
@@ -1019,10 +1052,14 @@ function drawBackground(c) {
     vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${state.vignette*0.3})`);
     c.fillStyle = vg; c.fillRect(0,0,W,H);
   }
+  c.save();
   for (const s of specks) {
     c.beginPath(); c.arc(s.x,s.y,s.r,0,Math.PI*2);
-    c.fillStyle=`rgba(210,200,200,${s.a})`; c.fill();
+    c.shadowColor = `rgba(220,215,255,${s.a * 0.7})`;
+    c.shadowBlur = s.r * 4;
+    c.fillStyle=`rgba(230,225,240,${s.a})`; c.fill();
   }
+  c.restore();
 }
 
 // ── Board Rendering ────────────────────────────────────────────
@@ -1057,9 +1094,8 @@ function drawBoard(c, now) {
       drawBevelTri(c, sx, sy, PIECE_S, slot.ori, COL.scarletBright, "#FF6680", "#8B0A1E", "#5A0814", null, sa.scale);
       c.save();
       const starSize = Math.max(14, PIECE_S * 0.38)|0;
-      c.font = `bold ${starSize}px 'Merriweather', serif`; c.textAlign = "center"; c.textBaseline = "middle";
-      const off = slot.ori === "up" ? PIECE_S * 0.06 : -PIECE_S * 0.03;
-      c.fillStyle = "#5A0814"; c.fillText("\u2605", sx, sy + off);
+      c.font = `bold ${starSize}px 'VCR OSD Mono', monospace`; c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillStyle = "#5A0814"; c.fillText("\u2605", sx, sy);
       c.restore();
     } else if (state.board[i]) {
       const piece = state.board[i];
@@ -1079,7 +1115,7 @@ function drawBoard(c, now) {
   for (const fl of state.floatLabels) {
     if (fl.alpha > 0) {
       c.save(); c.globalAlpha=fl.alpha;
-      c.font=`bold ${Math.max(16, S * 0.35)|0}px 'Merriweather', serif`; c.textAlign="center"; c.textBaseline="middle";
+      c.font=`${Math.max(14, S * 0.32)|0}px 'VCR OSD Mono', monospace`; c.textAlign="center"; c.textBaseline="middle";
       c.fillStyle=fl.color; c.fillText(fl.text, CX+fl.x, CY+fl.y+fl.offsetY);
       c.restore();
     }
@@ -1138,13 +1174,13 @@ function drawTrays(c, now) {
     // Tray labels - "YOU" / "OPPONENT"
     const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
     const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
-    const labelSize = Math.max(22, TRAY_PIECE_S * 0.9)|0;
-    c.font = `bold ${labelSize}px 'Allura', cursive`;
+    const labelSize = Math.max(22, TRAY_PIECE_S * 0.8)|0;
+    c.font = `${labelSize}px 'VCR OSD Mono', monospace`;
     c.textAlign = "center"; c.textBaseline = "middle";
     const isActive = state.currentPlayer === owner && state.phase === "playing";
     c.fillStyle = isActive ? COL.scarletBright : (owner === 0 ? "#AAA" : "#666");
 
-    const label = owner === myIdx ? "You" : "Opponent";
+    const label = owner === myIdx ? "YOU" : "OPPONENT";
     c.fillText(label, lx, ly - TRAY_PIECE_S * 1.7);
   }
 
@@ -1160,61 +1196,62 @@ function drawHUD(c, now) {
 
   const baseFontSize = Math.max(12, H * 0.03);
   const margin = Math.max(16, W * 0.02);
+  const bezelPad = 12; // extra inset to clear CRT bezel frame
 
   c.save();
   // Turn indicator (top center)
-  c.font = `bold ${baseFontSize * 2.25}px 'Allura', cursive`;
+  c.font = `${(baseFontSize * 2.025)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "top";
   c.fillStyle = isMyTurn ? COL.scarletBright : "#889";
   c.globalAlpha = isMyTurn ? pulseA : 0.7;
-  c.fillText(isMyTurn ? "Your turn" : "Opponent's turn", CX, margin);
+  c.fillText(isMyTurn ? "YOUR TURN" : "OPPONENT'S TURN", CX, margin + bezelPad);
   c.globalAlpha = 1;
 
   // Round indicator (top left)
-  c.font = `${baseFontSize}px 'Merriweather', serif`;
+  c.font = `${(baseFontSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "left";
   c.fillStyle = "#AAB";
-  c.fillText(`Round ${state.round}/2`, margin, margin);
+  c.fillText(`ROUND ${state.round}/2`, margin + bezelPad, margin + bezelPad);
 
   // Scores (top right, stacked)
-  c.font = `bold ${baseFontSize}px 'Merriweather', serif`;
+  c.font = `${(baseFontSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "right";
   c.fillStyle = COL.white;
-  c.fillText(`White: ${state.scores[0]}`, W - margin, margin);
+  c.fillText(`WHITE: ${state.scores[0]}`, W - margin - bezelPad, margin + bezelPad);
   c.fillStyle = "#999";
-  c.fillText(`Black: ${state.scores[1]}`, W - margin, margin + baseFontSize * 1.4);
+  c.fillText(`BLACK: ${state.scores[1]}`, W - margin - bezelPad, margin + bezelPad + baseFontSize * 1.4);
 
   // Room code
-  c.font = `${Math.max(10, baseFontSize * 0.7)|0}px 'Merriweather', serif`;
+  c.font = `${Math.max(10, baseFontSize * 0.65)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "right";
   c.fillStyle = "#556";
-  c.fillText(`Room: ${Net.roomCode}`, W - margin, margin + baseFontSize * 3);
+  c.fillText(`ROOM: ${Net.roomCode}`, W - margin - bezelPad, margin + bezelPad + baseFontSize * 3);
 
   // Restart and Home buttons
   const btnW = Math.max(50, W * 0.06);
   const btnH = Math.max(24, H * 0.045);
-  const btnY = H - margin - btnH;
-  const restartBtn = {x: W - margin * 2 - btnW * 2, y: btnY, w: btnW, h: btnH};
-  const homeBtn = {x: W - margin - btnW, y: btnY, w: btnW, h: btnH};
+  const btnY = H - margin - btnH - bezelPad;
+  const restartBtn = {x: W - margin * 2 - btnW * 2 - bezelPad, y: btnY, w: btnW, h: btnH};
+  const homeBtn = {x: W - margin - btnW - bezelPad, y: btnY, w: btnW, h: btnH};
 
   // Restart button
   roundRect(c, restartBtn.x, restartBtn.y, restartBtn.w, restartBtn.h, 4);
   c.fillStyle = state.hoverRestart ? "#2A2024" : "#1E1618";
   c.fill();
   c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-  c.font = `${baseFontSize * 0.75}px 'Merriweather', serif`;
+  c.font = `${(baseFontSize * 0.7)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = "#AAB";
-  c.fillText("Restart", restartBtn.x + restartBtn.w/2, restartBtn.y + restartBtn.h/2 + 2);
+  c.fillText("RESTART", restartBtn.x + restartBtn.w/2, restartBtn.y + restartBtn.h/2 - 3);
 
   // Home button
   roundRect(c, homeBtn.x, homeBtn.y, homeBtn.w, homeBtn.h, 4);
   c.fillStyle = state.hoverHome ? "#2A2024" : "#1E1618";
   c.fill();
   c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-  c.font = `${baseFontSize * 0.75}px 'Merriweather', serif`;
+  c.font = `${(baseFontSize * 0.7)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#AAB";
-  c.fillText("Home", homeBtn.x + homeBtn.w/2, homeBtn.y + homeBtn.h/2 + 2);
+  c.fillText("HOME", homeBtn.x + homeBtn.w/2, homeBtn.y + homeBtn.h/2 - 3);
 
   c.restore();
 }
@@ -1241,10 +1278,10 @@ function drawConfirmDialog(ctx) {
 
   // Question
   const questionSize = Math.max(18, H * 0.04);
-  ctx.font = `bold ${questionSize}px 'Merriweather', serif`;
+  ctx.font = `${(questionSize * 1.275)|0}px 'VCR OSD Mono', monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#DDE";
-  ctx.fillText("Are you sure?", CX, py + ph * 0.28);
+  ctx.fillText("ARE YOU SURE?", CX, py + ph * 0.28);
 
   // Yes button (lighter, prominent)
   const btnW = Math.max(50, W * 0.06);
@@ -1258,9 +1295,9 @@ function drawConfirmDialog(ctx) {
   ctx.lineWidth = 2;
   ctx.stroke();
   const btnFontSize = Math.max(14, H * 0.033);
-  ctx.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+  ctx.font = `${(btnFontSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#E0E4EC";
-  ctx.fillText("Yes", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2 + 2);
+  ctx.fillText("YES", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2 - 3);
 
   // No button (darker, subdued)
   const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
@@ -1270,9 +1307,9 @@ function drawConfirmDialog(ctx) {
   ctx.strokeStyle = state.hoverNo ? "#886" : "#443";
   ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+  ctx.font = `${(btnFontSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = state.hoverNo ? "#AA9" : "#776";
-  ctx.fillText("No", noBtn.x + noBtn.w/2, noBtn.y + noBtn.h/2 + 2);
+  ctx.fillText("NO", noBtn.x + noBtn.w/2, noBtn.y + noBtn.h/2 - 3);
 
   ctx.restore();
 }
@@ -1287,7 +1324,7 @@ function drawToasts(c, dt) {
     if (t.timer >= t.dur) { state.toasts.splice(i, 1); continue; }
     const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
     c.save(); c.globalAlpha = Math.max(0, alpha);
-    c.font = `bold ${Math.max(14, S * 0.3)|0}px 'Merriweather', serif`; c.textAlign = "center"; c.textBaseline = "middle";
+    c.font = `${Math.max(12, S * 0.28)|0}px 'VCR OSD Mono', monospace`; c.textAlign = "center"; c.textBaseline = "middle";
     c.fillStyle = COL.scarletBright; c.fillText(t.text, CX, H - 60);
     c.restore();
   }
@@ -1327,8 +1364,20 @@ function getButtons() {
     BTN_STANDARD: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_RANDOM: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_BACK_MAP: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 },
-    BTN_START_JOIN: { x: CX - bw * 0.35, y: by + spacing * 2, w: bw * 0.31, h: bh * 0.8, r: 8 },
-    BTN_BACK_JOIN: { x: CX + bw * 0.04, y: by + spacing * 2, w: bw * 0.31, h: bh * 0.8, r: 8 }
+    BTN_START_JOIN: (() => {
+      const inputH = 60;
+      const inputCenterY = H / 2;
+      const inputBottom = inputCenterY + inputH / 2;
+      const btnGap = 40;
+      return { x: CX - bw * 0.35, y: inputBottom + btnGap, w: bw * 0.31, h: bh * 0.8, r: 8 };
+    })(),
+    BTN_BACK_JOIN: (() => {
+      const inputH = 60;
+      const inputCenterY = H / 2;
+      const inputBottom = inputCenterY + inputH / 2;
+      const btnGap = 40;
+      return { x: CX + bw * 0.04, y: inputBottom + btnGap, w: bw * 0.31, h: bh * 0.8, r: 8 };
+    })()
   };
 }
 
@@ -1342,8 +1391,20 @@ function drawLobby(c, now) {
   c.fillStyle = "rgba(14,8,10,0.75)";
   c.fillRect(0, 0, W, H);
 
+  // Starry specks on top of dim overlay
+  c.save();
+  for (const s of specks) {
+    c.beginPath();
+    c.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    c.shadowColor = `rgba(220,215,255,${s.a * 0.5})`;
+    c.shadowBlur = s.r * 4;
+    c.fillStyle = `rgba(230,225,240,${s.a * 0.8})`;
+    c.fill();
+  }
+  c.restore();
+
   // Title
-  c.font = `${titleSize}px 'Allura', cursive`;
+  c.font = `bold ${titleSize}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.scarletBright;
   c.fillText("Scarlet Triangle", CX, titleY);
@@ -1351,15 +1412,15 @@ function drawLobby(c, now) {
   const btnFontSize = Math.max(16, H * 0.04);
 
   if (state.phase === "lobby") {
-    // Create Game button (gold)
+    // Create Game button (bronze)
     const bc = BTN_CREATE;
     roundRect(c, bc.x, bc.y, bc.w, bc.h, bc.r);
-    c.fillStyle = state.hoverCreate ? "#2A2018" : "#1E1810";
+    c.fillStyle = state.hoverCreate ? "#3A2018" : "#2A1810";
     c.fill();
-    c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${btnFontSize}px 'Merriweather', serif`;
-    c.fillStyle = COL.goldBase;
-    c.fillText("Create Game", CX, bc.y + bc.h/2 + 2);
+    c.strokeStyle = "#C8956E"; c.lineWidth = 2; c.stroke();
+    c.font = `bold ${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
+    c.fillStyle = "#B08060";
+    c.fillText("CREATE GAME", CX, bc.y + bc.h/2 - 3);
 
     // Join Game button
     const bj = BTN_JOIN;
@@ -1367,19 +1428,19 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverJoin ? "#2A2A30" : "#1E1E24";
     c.fill();
     c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+    c.font = `bold ${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = COL.accent;
-    c.fillText("Join Game", CX, bj.y + bj.h/2 + 2);
+    c.fillText("JOIN GAME", CX, bj.y + bj.h/2 - 3);
 
-    // vs CPU button (bronze)
+    // vs CPU button (gold)
     const bcpu = BTN_CPU;
     roundRect(c, bcpu.x, bcpu.y, bcpu.w, bcpu.h, bcpu.r);
-    c.fillStyle = state.hoverCPU ? "#3A2018" : "#2A1810";
+    c.fillStyle = state.hoverCPU ? "#2A2018" : "#1E1810";
     c.fill();
-    c.strokeStyle = "#C8956E"; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${btnFontSize}px 'Merriweather', serif`;
-    c.fillStyle = "#B08060";
-    c.fillText("vs CPU", CX, bcpu.y + bcpu.h/2 + 2);
+    c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+    c.font = `bold ${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
+    c.fillStyle = COL.goldBase;
+    c.fillText("VS CPU", CX, bcpu.y + bcpu.h/2 - 3);
 
     // Hot Seat button (scarlet)
     const bh = BTN_HOTSEAT;
@@ -1387,24 +1448,24 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverHotSeat ? "#2A1820" : "#1E1018";
     c.fill();
     c.strokeStyle = COL.scarletBright; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${btnFontSize}px 'Merriweather', serif`;
+    c.font = `bold ${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = COL.scarletBright;
-    c.fillText("Hot Seat", CX, bh.y + bh.h/2 + 2);
+    c.fillText("HOT SEAT", CX, bh.y + bh.h/2 - 3);
 
     // Error
     if (state.lobbyError) {
-      c.font = `bold ${btnFontSize * 0.73}px 'Merriweather', serif`;
+      c.font = `${(btnFontSize * 0.65)|0}px 'VCR OSD Mono', monospace`;
       c.fillStyle = COL.denied;
       c.fillText(state.lobbyError, CX, (BTN_HOTSEAT.y + BTN_HOTSEAT.h + BTN_HOWTO.y) / 2);
     }
 
     // How to Play toggle
     const bht = BTN_HOWTO;
-    c.font = `bold ${btnFontSize * 0.64}px 'Merriweather', serif`;
+    c.font = `${(btnFontSize * 0.6)|0}px 'VCR OSD Mono', monospace`;
     c.textAlign = "center"; c.textBaseline = "middle";
     c.fillStyle = state.hoverHowTo ? "#AAB" : "#778";
     const arrow = state.howToExpanded ? "\u25B2" : "\u25BC";
-    c.fillText(arrow + " How to Play " + arrow, CX, bht.y + bht.h/2 + 2);
+    c.fillText(arrow + " HOW TO PLAY " + arrow, CX, bht.y + bht.h/2);
 
     if (state.howToExpanded) {
       // Dim overlay
@@ -1417,12 +1478,12 @@ function drawLobby(c, now) {
         "Triangles adjacent to the Scarlet Triangle score points.",
         "Whoever has the most points at the end of two rounds is the winner!"
       ];
-      const lineH = 28, pad = 28;
-      const boxW = 620, boxR = 10;
-      const titleGap = 38;
+      const lineH = 40, pad = 50;
+      const boxW = 840, boxR = 14;
+      const titleGap = 68;
       const contentH = titleGap + (lines.length - 1) * lineH;
-      const closeH = 34;
-      const boxH = contentH + closeH + pad * 2 + 24;
+      const closeH = 46;
+      const boxH = contentH + closeH + pad * 2 + 44;
       const boxX = CX - boxW/2, boxY = CY - boxH/2;
 
       roundRect(c, boxX, boxY, boxW, boxH, boxR);
@@ -1432,18 +1493,18 @@ function drawLobby(c, now) {
       const contentArea = boxH - closeH;
       const titleY = boxY + (contentArea - contentH) / 2;
 
-      c.font = "bold 42px 'Allura', cursive";
+      c.font = "48px 'VCR OSD Mono', monospace";
       c.textAlign = "center"; c.textBaseline = "middle";
       c.fillStyle = COL.scarletBright;
-      c.fillText("How to Play", CX, titleY);
+      c.fillText("HOW TO PLAY", CX, titleY);
 
-      c.font = "15px 'Merriweather', serif";
+      c.font = "18px 'VCR OSD Mono', monospace";
       c.fillStyle = "#CCD";
       for (let i = 0; i < lines.length; i++) {
         c.fillText(lines[i], CX, titleY + titleGap + i * lineH);
       }
 
-      c.font = "13px 'Merriweather', serif";
+      c.font = "13px 'VCR OSD Mono', monospace";
       c.fillStyle = "#667";
       c.fillText("Click anywhere to close", CX, boxY + boxH - 18);
     }
@@ -1453,19 +1514,19 @@ function drawLobby(c, now) {
     const titleBottom = titleY + titleSize / 2;
     const midY = titleBottom + (BTN_BACK.y - titleBottom) / 2;
 
-    c.font = "bold 24px 'Merriweather', serif";
+    c.font = "18px 'VCR OSD Mono', monospace";
     c.fillStyle = COL.white;
-    c.fillText("Room Code:", CX, midY - 45);
+    c.fillText("ROOM CODE:", CX, midY - 45);
 
-    c.font = "bold 64px 'Merriweather', serif";
+    c.font = "48px 'VCR OSD Mono', monospace";
     c.fillStyle = COL.scarletBright;
     c.fillText(Net.roomCode, CX, midY + 5);
 
     const blink = 0.5 + 0.5 * Math.sin(now / 500);
     c.globalAlpha = blink;
-    c.font = "20px 'Merriweather', serif";
+    c.font = "16px 'VCR OSD Mono', monospace";
     c.fillStyle = "#AAB";
-    c.fillText("Waiting for opponent...", CX, midY + 55);
+    c.fillText("WAITING FOR OPPONENT...", CX, midY + 55);
     c.globalAlpha = 1;
 
     // Back button
@@ -1474,51 +1535,50 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverBack ? "#2A2024" : "#1E1618";
     c.fill();
     c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-    c.font = "16px 'Merriweather', serif";
+    c.font = "21px 'VCR OSD Mono', monospace";
     c.fillStyle = "#AAB";
-    c.fillText("Cancel", CX, bb.y + bb.h/2 + 2);
+    c.fillText("CANCEL", CX, bb.y + bb.h/2 - 3);
   }
   else if (state.phase === "joining") {
-    // Center content between title bottom and buttons top
-    const titleBottom = titleY + titleSize / 2;
-    const btnsTop = BTN_START_JOIN.y;
+    // Center input at page center
     const inputW = 240, inputH = 60;
-    const labelH = 24, gap = 12;
-    const totalH = labelH + gap + inputH;
-    const contentTopY = titleBottom + (btnsTop - titleBottom) / 2 - totalH / 2;
-    const labelCY = contentTopY + labelH / 2;
-    const inputY = contentTopY + labelH + gap;
+    const inputCenterY = H / 2;
+    const inputY = inputCenterY - inputH / 2;
     const inputX = CX - inputW / 2;
+    const btnGap = 40; // distance from input to buttons and label
+
+    // Label at same distance above input as buttons are below
+    const labelCY = inputY - btnGap - 14;
 
     // Join input
-    c.font = "bold 24px 'Merriweather', serif";
+    c.font = "36px 'VCR OSD Mono', monospace";
     c.fillStyle = COL.white;
-    c.fillText("Enter Room Code:", CX, labelCY);
+    c.fillText("ENTER ROOM CODE:", CX, labelCY);
 
     // Input box
     roundRect(c, inputX, inputY, inputW, inputH, 8);
     c.fillStyle = "#1A0E12"; c.fill();
     c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
 
-    c.font = "bold 48px 'Merriweather', serif";
+    c.font = "40px 'VCR OSD Mono', monospace";
     c.fillStyle = COL.white;
-    c.fillText(state.joinCode, CX, inputY + inputH/2 + 3);
+    c.fillText(state.joinCode, CX, inputY + inputH/2 - 5);
 
     // Cursor blink
     if (state.joinCode.length < 4) {
       const blink = Math.sin(now / 400) > 0 ? 1 : 0;
       if (blink) {
-        c.font = "bold 48px 'Merriweather', serif";
+        c.font = "40px 'VCR OSD Mono', monospace";
         const textW = c.measureText(state.joinCode).width;
         const cursorX = CX + textW / 2 + 4;
         c.fillStyle = COL.accent;
-        c.fillRect(cursorX, inputY + 12, 3, inputH - 24);
+        c.fillRect(cursorX, inputY + 8, 3, inputH - 20);
       }
     }
 
     // Error
     if (state.lobbyError) {
-      c.font = "bold 16px 'Merriweather', serif";
+      c.font = "14px 'VCR OSD Mono', monospace";
       c.fillStyle = COL.denied;
       c.fillText(state.lobbyError, CX, inputY + inputH + 18);
     }
@@ -1532,9 +1592,9 @@ function drawLobby(c, now) {
     c.strokeStyle = canStart ? (state.hoverStartJoin ? COL.accent : "#667") : "#333";
     c.lineWidth = canStart ? 2 : 1;
     c.stroke();
-    c.font = "bold 16px 'Merriweather', serif";
+    c.font = "28px 'VCR OSD Mono', monospace";
     c.fillStyle = canStart ? COL.accent : "#555";
-    c.fillText("Start", bStart.x + bStart.w/2, bStart.y + bStart.h/2 + 2);
+    c.fillText("START", bStart.x + bStart.w/2, bStart.y + bStart.h/2 - 3);
 
     // Back button
     const bBack = BTN_BACK_JOIN;
@@ -1542,9 +1602,9 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverBackJoin ? "#2A2024" : "#1E1618";
     c.fill();
     c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-    c.font = "16px 'Merriweather', serif";
+    c.font = "28px 'VCR OSD Mono', monospace";
     c.fillStyle = "#AAB";
-    c.fillText("Back", bBack.x + bBack.w/2, bBack.y + bBack.h/2 + 2);
+    c.fillText("BACK", bBack.x + bBack.w/2, bBack.y + bBack.h/2 - 3);
   }
 
   c.restore();
@@ -1562,39 +1622,39 @@ function drawModeSelection(c) {
 
   // Title
   const titleSize = Math.max(24, H * 0.067);
-  c.font = `bold ${titleSize * 1.95}px 'Allura', cursive`;
+  c.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
-  c.fillStyle = COL.goldBase;
+  c.fillStyle = COL.scarletBright;
   c.fillText("Select Game Mode", CX, H * 0.22);
 
   const btnTitleSize = Math.max(18, H * 0.044);
   const btnSubSize = Math.max(12, H * 0.026);
 
-  // Regular mode button (silver, like Join Game)
+  // Regular mode button (brown, like Create Game)
   const br = BTN_REGULAR;
   roundRect(c, br.x, br.y, br.w, br.h, br.r);
-  c.fillStyle = state.hoverRegular ? "#2A2A30" : "#1E1E24";
+  c.fillStyle = state.hoverRegular ? "#3A2018" : "#2A1810";
   c.fill();
-  c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
-  c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
-  c.fillStyle = COL.accent;
-  c.fillText("Regular", CX, br.y + br.h * 0.38);
-  c.font = `${btnSubSize}px 'Merriweather', serif`;
+  c.strokeStyle = "#C8956E"; c.lineWidth = 2; c.stroke();
+  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#B08060";
+  c.fillText("REGULAR", CX, br.y + br.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#AAB";
-  c.fillText("Standard game rules", CX, br.y + br.h * 0.72);
+  c.fillText("STANDARD GAME RULES", CX, br.y + br.h * 0.68);
 
-  // Hidden mode button (red/scarlet)
+  // Hidden mode button (gold, like VS CPU)
   const bh = BTN_HIDDEN;
   roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
-  c.fillStyle = state.hoverHidden ? "#2A1820" : "#1E1018";
+  c.fillStyle = state.hoverHidden ? "#2A2018" : "#1E1810";
   c.fill();
-  c.strokeStyle = COL.scarletBright; c.lineWidth = 2; c.stroke();
-  c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
-  c.fillStyle = COL.scarletBright;
-  c.fillText("Hidden", CX, bh.y + bh.h * 0.38);
-  c.font = `${btnSubSize}px 'Merriweather', serif`;
+  c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
+  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = COL.goldBase;
+  c.fillText("HIDDEN", CX, bh.y + bh.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#AAB";
-  c.fillText("Each player's 1 & 10 are hidden", CX, bh.y + bh.h * 0.72);
+  c.fillText("EACH PLAYER'S 1 & 10 ARE HIDDEN", CX, bh.y + bh.h * 0.68);
 
   // Back button (positioned below hidden button)
   const bb = BTN_BACK_MODE;
@@ -1602,9 +1662,9 @@ function drawModeSelection(c) {
   c.fillStyle = state.hoverBack ? "#2A2024" : "#1E1618";
   c.fill();
   c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-  c.font = "16px 'Merriweather', serif";
+  c.font = "21px 'VCR OSD Mono', monospace";
   c.fillStyle = "#AAB";
-  c.fillText("Back", CX, bb.y + bb.h/2 + 2);
+  c.fillText("BACK", CX, bb.y + bb.h/2 - 3);
 
   c.restore();
 }
@@ -1619,9 +1679,21 @@ function drawMapSelection(c) {
   c.fillStyle = "rgba(14,8,10,0.75)";
   c.fillRect(0, 0, W, H);
 
+  // Starry specks on top of dim overlay
+  c.save();
+  for (const s of specks) {
+    c.beginPath();
+    c.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    c.shadowColor = `rgba(220,215,255,${s.a * 0.5})`;
+    c.shadowBlur = s.r * 4;
+    c.fillStyle = `rgba(230,225,240,${s.a * 0.8})`;
+    c.fill();
+  }
+  c.restore();
+
   // Title — same style as mode selection
   const titleSize = Math.max(24, H * 0.067);
-  c.font = `bold ${titleSize * 1.95}px 'Allura', cursive`;
+  c.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.scarletBright;
   c.fillText("Select Map", CX, H * 0.22);
@@ -1629,33 +1701,33 @@ function drawMapSelection(c) {
   const btnTitleSize = Math.max(18, H * 0.044);
   const btnSubSize = Math.max(12, H * 0.026);
 
-  // Standard Map button
+  // Standard Map button (brown, like Create Game)
   const bs = BTN_STANDARD;
   roundRect(c, bs.x, bs.y, bs.w, bs.h, bs.r);
-  c.fillStyle = state.hoverStandard ? "#2A1820" : "#1E1018";
+  c.fillStyle = state.hoverStandard ? "#3A2018" : "#2A1810";
   c.fill();
-  c.strokeStyle = state.hoverStandard ? COL.accent : "#5A3040";
+  c.strokeStyle = "#C8956E";
   c.lineWidth = 2; c.stroke();
-  c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
-  c.fillStyle = "#DDE";
-  c.fillText("Standard Map", CX, bs.y + bs.h * 0.38);
-  c.font = `${btnSubSize}px 'Merriweather', serif`;
+  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#B08060";
+  c.fillText("STANDARD MAP", CX, bs.y + bs.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#889";
-  c.fillText("Classic triangle layout", CX, bs.y + bs.h * 0.72);
+  c.fillText("CLASSIC TRIANGLE LAYOUT", CX, bs.y + bs.h * 0.68);
 
-  // Random Map button
+  // Random Map button (gold, like VS CPU)
   const br = BTN_RANDOM;
   roundRect(c, br.x, br.y, br.w, br.h, br.r);
-  c.fillStyle = state.hoverRandom ? "#3A2018" : "#2A1810";
+  c.fillStyle = state.hoverRandom ? "#2A2018" : "#1E1810";
   c.fill();
-  c.strokeStyle = state.hoverRandom ? COL.goldBase : "#6A4A3A";
+  c.strokeStyle = COL.goldBase;
   c.lineWidth = 2; c.stroke();
-  c.font = `bold ${btnTitleSize}px 'Merriweather', serif`;
-  c.fillStyle = "#DDE";
-  c.fillText("Random Map", CX, br.y + br.h * 0.38);
-  c.font = `${btnSubSize}px 'Merriweather', serif`;
+  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = COL.goldBase;
+  c.fillText("RANDOM MAP", CX, br.y + br.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#889";
-  c.fillText("Randomly generated board", CX, br.y + br.h * 0.72);
+  c.fillText("RANDOMLY GENERATED BOARD", CX, br.y + br.h * 0.68);
 
   // Back button
   const bb = BTN_BACK_MAP;
@@ -1663,9 +1735,9 @@ function drawMapSelection(c) {
   c.fillStyle = state.hoverBackMap ? "#2A2024" : "#1E1618";
   c.fill();
   c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-  c.font = "16px 'Merriweather', serif";
+  c.font = "21px 'VCR OSD Mono', monospace";
   c.fillStyle = "#AAB";
-  c.fillText("Back", CX, bb.y + bb.h/2 + 2);
+  c.fillText("BACK", CX, bb.y + bb.h/2 - 3);
 
   c.restore();
 }
@@ -1693,31 +1765,31 @@ function drawRoundResult(c) {
   const titleSize = Math.max(18, H * 0.04);
   const scoreSize = Math.max(22, H * 0.055);
 
-  c.font = `bold ${scoreSize}px 'Allura', cursive`;
+  c.font = `${scoreSize}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.scarletBright;
-  c.fillText(`Round ${state.round} Results`, CX, py + titleSize * 2);
+  c.fillText(`ROUND ${state.round} RESULTS`, CX, py + titleSize * 2);
 
-  c.font = `bold ${scoreSize}px 'Merriweather', serif`;
+  c.font = `${(scoreSize * 0.8)|0}px 'VCR OSD Mono', monospace`;
   const myIdx = Net.myIndex;
 
   c.fillStyle = COL.white;
-  c.fillText(`White: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize/2);
+  c.fillText(`WHITE: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize*3/8);
   c.fillStyle = "#AAA";
-  c.fillText(`Black: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize);
+  c.fillText(`BLACK: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize*3/4);
 
   if (state.phase === "waitingAdvance") {
-    const promptSize2 = Math.max(13, H * 0.022);
-    c.font = `${promptSize2}px 'Merriweather', serif`;
+    const promptSize2 = Math.max(11, H * 0.02);
+    c.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#667";
-    c.fillText("Waiting for opponent...", CX, py + ph - titleSize * 2);
+    c.fillText("WAITING FOR OPPONENT...", CX, py + ph - titleSize * 2);
   } else {
     const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
     c.globalAlpha = blink;
-    const promptSize2 = Math.max(13, H * 0.022);
-    c.font = `${promptSize2}px 'Merriweather', serif`;
+    const promptSize2 = Math.max(11, H * 0.02);
+    c.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
     c.fillStyle = COL.accent;
-    const contText = state.round < 2 ? "Space / Enter / Click: Next Round" : "Space / Enter / Click: View Winner";
+    const contText = state.round < 2 ? "SPACE / ENTER / CLICK: NEXT ROUND" : "SPACE / ENTER / CLICK: VIEW WINNER";
     c.fillText(contText, CX, py + ph - titleSize * 2);
     c.globalAlpha = 1;
   }
@@ -1752,23 +1824,23 @@ function drawGameOver(c) {
   const titleSize = Math.max(18, H * 0.04);
   const scoreSize = Math.max(22, H * 0.055);
 
-  c.font = `bold ${scoreSize}px 'Allura', cursive`;
+  c.font = `${(scoreSize * 1.25)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = winner === myIdx ? COL.scarletBright : (winner === -1 ? "#AAB" : COL.denied);
-  c.fillText(heading, CX, py + titleSize * 2);
+  c.fillText(heading.toUpperCase(), CX, py + titleSize * 2);
 
-  c.font = `bold ${scoreSize}px 'Merriweather', serif`;
+  c.font = `${(scoreSize * 0.8)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = COL.white;
-  c.fillText(`White: ${state.scores[0]}`, CX, py + ph/2 - scoreSize/2);
+  c.fillText(`WHITE: ${state.scores[0]}`, CX, py + ph/2 - scoreSize*3/8);
   c.fillStyle = "#AAA";
-  c.fillText(`Black: ${state.scores[1]}`, CX, py + ph/2 + scoreSize);
+  c.fillText(`BLACK: ${state.scores[1]}`, CX, py + ph/2 + scoreSize*3/4);
 
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   c.globalAlpha = blink;
-  const promptSize2 = Math.max(13, H * 0.022);
-  c.font = `${promptSize2}px 'Merriweather', serif`;
+  const promptSize2 = Math.max(11, H * 0.02);
+  c.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
   c.fillStyle = COL.accent;
-  c.fillText("Space / Enter / Click: Return to Lobby", CX, py + ph - titleSize * 2);
+  c.fillText("SPACE / ENTER / CLICK: RETURN TO LOBBY", CX, py + ph - titleSize * 2);
   c.globalAlpha = 1;
 
   c.restore();
@@ -1784,13 +1856,13 @@ function drawDisconnected(c, dt) {
   c.save();
   c.fillStyle = "rgba(14,8,10,0.8)";
   c.fillRect(0, 0, W, H);
-  c.font = "bold 28px 'Merriweather', serif";
+  c.font = "22px 'VCR OSD Mono', monospace";
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.denied;
-  c.fillText("Opponent Disconnected", CX, CY - 20);
-  c.font = "18px 'Merriweather', serif";
+  c.fillText("OPPONENT DISCONNECTED", CX, CY - 20);
+  c.font = "14px 'VCR OSD Mono', monospace";
   c.fillStyle = "#AAB";
-  c.fillText("Returning to lobby...", CX, CY + 20);
+  c.fillText("RETURNING TO LOBBY...", CX, CY + 20);
   c.restore();
 }
 
@@ -1865,25 +1937,25 @@ function handleClick(canvasX, canvasY) {
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_CREATE)) {
       if (!Net.connected) return;
-      playPlaceClick();
+      playSFX("keyclick", 0.125);
       state.phase = "modeSelection";
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_JOIN)) {
-      playPlaceClick();
+      playSFX("keyclick", 0.125);
       state.phase = "joining";
       state.joinCode = "";
       state.lobbyError = "";
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT)) {
-      playPlaceClick();
-      window.location.href = "golden-triangle.html";
+      playSFX("keyclick", 0.125);
+      setTimeout(() => { window.location.href = "golden-triangle.html"; }, 150);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_CPU)) {
-      playPlaceClick();
-      window.location.href = "golden-triangle.html?cpu=1";
+      playSFX("keyclick", 0.125);
+      setTimeout(() => { window.location.href = "golden-triangle.html?cpu=1"; }, 150);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOWTO)) {
@@ -1896,13 +1968,13 @@ function handleClick(canvasX, canvasY) {
   // Mode Selection
   if (state.phase === "modeSelection") {
     if (pointInRect(canvasX, canvasY, btns.BTN_REGULAR)) {
-      playPlaceClick();
+      playSFX("keyclick", 0.125);
       state.gameMode = "regular";
       state.phase = "mapSelection";
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HIDDEN)) {
-      playPlaceClick();
+      playSFX("keyclick", 0.125);
       state.gameMode = "hidden";
       state.phase = "mapSelection";
       return;
@@ -1917,14 +1989,14 @@ function handleClick(canvasX, canvasY) {
   // Map Selection
   if (state.phase === "mapSelection") {
     if (pointInRect(canvasX, canvasY, btns.BTN_STANDARD)) {
-      playPlaceClick();
+      playSFX("keyclick", 0.125);
       state.mapType = "standard";
       randomMapData = null;
       Net.createRoom(state.gameMode, "standard", null);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_RANDOM)) {
-      playPlaceClick();
+      playSFX("keyclick", 0.125);
       state.mapType = "random";
       generateRandomMap();
       Net.createRoom(state.gameMode, "random", randomMapData);
@@ -1948,6 +2020,7 @@ function handleClick(canvasX, canvasY) {
   // Joining (start and back buttons)
   if (state.phase === "joining") {
     if (pointInRect(canvasX, canvasY, btns.BTN_START_JOIN)) {
+      playSFX("keyclick", 0.125);
       if (state.joinCode.length === 4) {
         Net.joinRoom(state.joinCode);
       }
@@ -1983,19 +2056,22 @@ function handleClick(canvasX, canvasY) {
   // Playing - check for button clicks
   if (state.phase === "playing") {
     const margin = Math.max(16, W * 0.02);
+    const bezelPad = 12;
     const btnW = Math.max(50, W * 0.06);
     const btnH = Math.max(24, H * 0.045);
-    const btnY = H - margin - btnH;
-    const restartBtn = {x: W - margin * 2 - btnW * 2, y: btnY, w: btnW, h: btnH};
-    const homeBtn = {x: W - margin - btnW, y: btnY, w: btnW, h: btnH};
+    const btnY = H - margin - btnH - bezelPad;
+    const restartBtn = {x: W - margin * 2 - btnW * 2 - bezelPad, y: btnY, w: btnW, h: btnH};
+    const homeBtn = {x: W - margin - btnW - bezelPad, y: btnY, w: btnW, h: btnH};
 
     if (pointInRect(canvasX, canvasY, restartBtn)) {
+      playSFX("keyclick", 0.125);
       state.phase = "confirm";
       state.confirmAction = "restart";
       return;
     }
 
     if (pointInRect(canvasX, canvasY, homeBtn)) {
+      playSFX("keyclick", 0.125);
       state.phase = "confirm";
       state.confirmAction = "home";
       return;
@@ -2143,11 +2219,12 @@ function handleMouseMove(canvasX, canvasY) {
 
   // Playing - button hovers
   const margin = Math.max(16, W * 0.02);
+  const bezelPad = 12;
   const bw = Math.max(50, W * 0.06);
   const bh = Math.max(24, H * 0.045);
-  const by = H - margin - bh;
-  const restartBtn = {x: W - margin * 2 - bw * 2, y: by, w: bw, h: bh};
-  const homeBtn = {x: W - margin - bw, y: by, w: bw, h: bh};
+  const by = H - margin - bh - bezelPad;
+  const restartBtn = {x: W - margin * 2 - bw * 2 - bezelPad, y: by, w: bw, h: bh};
+  const homeBtn = {x: W - margin - bw - bezelPad, y: by, w: bw, h: bh};
 
   state.hoverRestart = pointInRect(canvasX, canvasY, restartBtn);
   state.hoverHome = pointInRect(canvasX, canvasY, homeBtn);
@@ -2222,6 +2299,7 @@ document.addEventListener("keydown", (e) => {
     if (key.length === 1 && /[A-Za-z0-9]/.test(key) && state.joinCode.length < 4) {
       state.joinCode += key.toUpperCase();
       state.lobbyError = "";
+      playSFX("keyclick", 0.125);
     }
     return;
   }
@@ -2292,6 +2370,185 @@ function frame(now) {
 // ── Init ───────────────────────────────────────────────────────
 Net.connect();
 requestAnimationFrame(frame);
+</script>
+
+<!-- CRT Television Overlay -->
+<style>
+.crt-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Scanlines */
+.crt-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.06) 2px,
+    rgba(0, 0, 0, 0.06) 4px
+  );
+  z-index: 1;
+}
+
+/* Vignette (screen curvature) */
+.crt-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 50%,
+    rgba(0, 0, 0, 0.25) 75%,
+    rgba(0, 0, 0, 0.6) 100%
+  );
+  z-index: 2;
+}
+
+/* Phosphor glow tint */
+.crt-phosphor {
+  position: absolute;
+  inset: 0;
+  background: rgba(40, 255, 60, 0.03);
+  mix-blend-mode: screen;
+  z-index: 3;
+}
+
+/* Chromatic aberration layer */
+.crt-aberration {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  backdrop-filter: none;
+}
+.crt-aberration::before,
+.crt-aberration::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.crt-aberration::before {
+  box-shadow: inset -1px 0 0 rgba(255, 0, 0, 0.06), inset 1px 0 0 rgba(0, 255, 255, 0.06);
+}
+.crt-aberration::after {
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 255, 0.05), inset 0 1px 0 rgba(255, 255, 0, 0.05);
+}
+
+/* CRT bezel frame */
+.crt-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: 12px;
+  box-shadow:
+    /* Outer plastic bezel - dark shell */
+    inset 0 0 0 18px #1a1a1a,
+    /* Inner bevel - slight highlight on top/left edge */
+    inset 2px 2px 0 18px #2a2a2a,
+    inset -2px -2px 0 18px #111,
+    /* Screen recess groove */
+    inset 0 0 0 22px #0a0a0a,
+    /* Soft inner shadow from bezel onto screen */
+    inset 0 0 30px 10px rgba(0, 0, 0, 0.5);
+  /* Rounded screen opening */
+  border: 4px solid #222;
+}
+
+/* Title-screen-only flicker */
+.crt-flicker {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0;
+  animation: crtFlicker 4s infinite;
+}
+.crt-flicker.active { opacity: 1; }
+.crt-flicker.submenu { opacity: 1; }
+.crt-noise.flash-submenu { opacity: 0.03; }
+
+@keyframes crtFlicker {
+  0%, 96%, 100% { background: transparent; }
+  97% { background: rgba(255, 255, 255, 0.015); }
+  98% { background: rgba(0, 0, 0, 0.02); }
+  99% { background: rgba(255, 255, 255, 0.01); }
+}
+
+/* Title-screen-only noise */
+.crt-noise {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  z-index: 5;
+  transition: opacity 0.05s;
+}
+.crt-noise.flash { opacity: 0.03; }
+</style>
+
+<div class="crt-overlay">
+  <div class="crt-aberration"></div>
+  <div class="crt-phosphor"></div>
+  <div class="crt-flicker" id="crtFlicker"></div>
+  <canvas class="crt-noise" id="crtNoiseCanvas"></canvas>
+  <div class="crt-frame"></div>
+</div>
+
+<script>
+(function() {
+  const noiseCanvas = document.getElementById('crtNoiseCanvas');
+  const noiseCtx = noiseCanvas.getContext('2d');
+  const flickerEl = document.getElementById('crtFlicker');
+  let noiseTimeout = null;
+
+  function resizeNoise() {
+    noiseCanvas.width = Math.ceil(window.innerWidth / 4);
+    noiseCanvas.height = Math.ceil(window.innerHeight / 4);
+  }
+  resizeNoise();
+  window.addEventListener('resize', resizeNoise);
+
+  function drawNoise() {
+    const w = noiseCanvas.width, h = noiseCanvas.height;
+    const img = noiseCtx.createImageData(w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = Math.random() * 255;
+      d[i] = v; d[i+1] = v; d[i+2] = v; d[i+3] = 255;
+    }
+    noiseCtx.putImageData(img, 0, 0);
+  }
+
+  function flashNoise() {
+    const isSubmenu = flickerEl.classList.contains('submenu');
+    if (!flickerEl.classList.contains('active') && !isSubmenu) {
+      noiseTimeout = setTimeout(flashNoise, 500);
+      return;
+    }
+    drawNoise();
+    const flashClass = isSubmenu ? 'flash-submenu' : 'flash';
+    noiseCanvas.classList.add(flashClass);
+    setTimeout(() => noiseCanvas.classList.remove(flashClass), 80 + Math.random() * 70);
+    noiseTimeout = setTimeout(flashNoise, 2000 + Math.random() * 4000);
+  }
+  noiseTimeout = setTimeout(flashNoise, 1000 + Math.random() * 2000);
+
+  const crtOverlay = document.querySelector('.crt-overlay');
+  // Poll game phase to toggle CRT effects
+  setInterval(() => {
+    const phase = typeof state !== 'undefined' ? state.phase : '';
+    const onTitle = phase === 'lobby';
+    const onSubmenu = phase === 'modeSelection' || phase === 'mapSelection';
+    flickerEl.classList.toggle('active', onTitle);
+    flickerEl.classList.toggle('submenu', onSubmenu);
+    crtOverlay.classList.toggle('submenu', onSubmenu);
+  }, 200);
+})();
 </script>
 </body>
 </html>

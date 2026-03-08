@@ -16,7 +16,7 @@ Open the HTML file directly in a browser. No server or build step required.
 
 - **Single file**: All HTML, CSS, and JS must be in one `.html` file
 - **Canvas 2D only**: No WebGL, no external rendering libraries
-- **No external assets**: Shapes-only rendering (no images, fonts, or sounds)
+- **No external assets for rendering**: Shapes-only rendering (no images). External fonts loaded via CDN (Google Fonts: Allura, Merriweather; CDNFonts: VCR OSD Mono). Sound effects loaded from external mp3 files.
 - **Internal resolution**: 960x540, letterboxed to preserve 16:9 aspect ratio
 - **localStorage key**: `goldenTriangle_bestMargin` for persisting best winning margin
 
@@ -46,6 +46,16 @@ State machine drives the entire game loop. Two rounds per match; starting player
 - Animation timings are precisely specified in Section 12 (placement pop: 140ms, denied shake: 120ms, etc.)
 - Progressive intensity: visual effects escalate as board fills (milestones at 10, 15, 18, 20 placements)
 - End-of-round reveal sequence: ~900ms total with staggered highlights and floating score labels
+
+### Sound Effects
+Audio uses both synthesized sounds (Web Audio API) and external mp3 files loaded at startup via `fetch` + `decodeAudioData`.
+
+- **`playPlaceClick()`**: Synthesized acrylic click (~20ms) for placing triangle tiles on the board
+- **`playSFX(name, volume)`**: Plays preloaded mp3 files with optional volume control
+- **`keyclick.mp3`** (volume 0.125): Menu button clicks (difficulty, mode, map selection, room code typing). Buttons that navigate away use `setTimeout` (150ms) to let the sound finish before page unload
+- **`arcade2.mp3`**: Plays during end-of-round reveal when floating +N score labels appear (synced to `labelStart` timing)
+- **`arcade4.mp3`**: Plays when the game over screen appears
+- **No sound**: Back buttons, cancel buttons, Yes/No confirm dialog buttons, How to Play button
 
 ## Online Multiplayer Implementation
 
