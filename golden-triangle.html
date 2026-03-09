@@ -23,12 +23,17 @@ let S = 66; // triangle side
 let TH = S * 0.8660254; // triangle height
 let PIECE_S = 58; // piece render side (smaller than slot to prevent overlap)
 
+// Per-owner tray sizing (gold may be compressed in wide 3P layout)
+let TRAY_GOLD_PIECE_S, TRAY_GOLD_SPACEX, TRAY_GOLD_SPACEY;
+
 // Colors
 const COL = {
   bgDeep: "#120A0E", bgMid: "#261820",
   goldBase: "#C9A24A", goldHi: "#E7D08A", goldSh: "#8A6A22",
   white: "#F2F2F2", whiteSh: "#CFCFCF",
   black: "#121212", blackHi: "#3A3A3A",
+  // Gold player (player 2) piece colors
+  goldPlayer: "#A48030", goldPlayerHi: "#C4A058", goldPlayerSh: "#6A4A12", goldPlayerLabel: "#E7D08A",
   slotOutline: "#8A8894",
   accent: "#C0C8D8",
   denied: "#FF5A6A",
@@ -219,7 +224,8 @@ function updateSlots() {
 updateSlots();
 
 // ── Random Map Generation ─────────────────────────────────────
-function generateRandomMap() {
+function generateRandomMap(targetSize) {
+  if (targetSize === undefined) targetSize = (state && state.numPlayers === 3) ? 31 : 21;
   const cells = [];
   const cellSet = new Set();
 
@@ -241,7 +247,7 @@ function generateRandomMap() {
   const frontier = new Set();
   for (const n of getNeighbors(0, 0)) frontier.add(key(n.gr, n.gc));
 
-  while (cells.length < 21) {
+  while (cells.length < targetSize) {
     const arr = Array.from(frontier);
 
     // Weighted selection: prefer cells closer to centroid for compact shapes
@@ -279,8 +285,8 @@ function generateRandomMap() {
   const cellMap = new Map();
   cells.forEach((cell, idx) => cellMap.set(key(cell.gr, cell.gc), idx));
 
-  const adj = Array.from({ length: 21 }, () => []);
-  for (let i = 0; i < 21; i++) {
+  const adj = Array.from({ length: targetSize }, () => []);
+  for (let i = 0; i < targetSize; i++) {
     const cell = cells[i];
     for (const n of getNeighbors(cell.gr, cell.gc)) {
       const nk = key(n.gr, n.gc);
@@ -297,6 +303,7 @@ const ctx = canvas.getContext("2d");
 
 let gDPR = 1;
 let TRAY_WHITE_CX, TRAY_BLACK_CX, TRAY_WHITE_CY, TRAY_BLACK_CY, TRAY_PIECE_S, TRAY_SPACEX, TRAY_SPACEY;
+let TRAY_GOLD_CX, TRAY_GOLD_CY;
 
 // ── Background Specks ──────────────────────────────────────────
 const specks = [];
@@ -313,14 +320,17 @@ function resize() {
   H = wh;
   CX = W / 2;
 
-  const hudH = Math.max(50, H * 0.065);
-  const buttonH = Math.max(35, H * 0.05);
+  const hudH = Math.max(20, H * 0.065);
+  const buttonH = Math.max(15, H * 0.05);
   const availH = H - hudH - buttonH;
 
   // Board display height ≈ 6.5S (G-frame ~6.06S + padding)
   const boardCoeff = 6.5;
   const trayBlockCoeff = 1.44; // 2 rows × 0.72S spacing
   const gapCoeff = 0.3;
+
+  let is3P = false;
+  try { is3P = state && state.numPlayers === 3; } catch(e) {}
 
   // --- Wide layout: trays beside board (upper-left / upper-right) ---
   const S_wide_vert = availH / boardCoeff;
@@ -329,12 +339,14 @@ function resize() {
 
   // --- Narrow layout: both trays side-by-side below board ---
   const S_narrow_vert = availH / (boardCoeff + gapCoeff + trayBlockCoeff);
-  const S_narrow_horiz = (W * 0.95) / 8; // two trays side-by-side ≈ 8S wide
+  // 3P needs more horizontal space for 3 trays (white + black + compressed gold)
+  const narrowHorizCoeff = is3P ? 12 : 8;
+  const S_narrow_horiz = (W * 0.95) / narrowHorizCoeff;
   const S_narrow = Math.min(S_narrow_vert, S_narrow_horiz);
 
   const useWide = S_wide >= S_narrow;
   S = useWide ? S_wide : S_narrow;
-  S = Math.max(20, S);
+  S = Math.max(8, S);
 
   TH = S * 0.8660254;
   PIECE_S = S * 0.88;
@@ -345,8 +357,47 @@ function resize() {
   TRAY_PIECE_S = S * 0.58;
   TRAY_SPACEX = S * 0.75;
   TRAY_SPACEY = S * 0.72;
+  // Default gold tray sizing = same as others
+  TRAY_GOLD_PIECE_S = TRAY_PIECE_S;
+  TRAY_GOLD_SPACEX = TRAY_SPACEX;
+  TRAY_GOLD_SPACEY = TRAY_SPACEY;
 
-  if (useWide) {
+  if (is3P && useWide) {
+    // 3-player wide: same white/black as 2P wide, gold tray under white (or under black if overlapping)
+    CY = hudH + availH / 2;
+    const sideMargin = (W - 7 * S) / 2;
+    TRAY_WHITE_CX = sideMargin / 2 + 12;
+    TRAY_BLACK_CX = W - sideMargin / 2 - 12;
+    TRAY_WHITE_CY = CY - S * 1.2;
+    TRAY_BLACK_CY = CY - S * 1.2;
+    TRAY_GOLD_CX = TRAY_WHITE_CX;
+    TRAY_GOLD_CY = TRAY_WHITE_CY + TRAY_SPACEY * 2.8;
+    const goldTrayRight = TRAY_GOLD_CX + 2.5 * TRAY_SPACEX;
+    const boardLeft = CX - 3.5 * S;
+    if (goldTrayRight > boardLeft) {
+      TRAY_GOLD_CX = TRAY_BLACK_CX;
+      TRAY_GOLD_CY = TRAY_BLACK_CY + TRAY_SPACEY * 2.8;
+    }
+  } else if (is3P && !useWide) {
+    // 3-player narrow: board on top, all 3 trays side-by-side below (same size)
+    const boardDisplayH = boardCoeff * S;
+    const gap = gapCoeff * S;
+    const trayBlockH = trayBlockCoeff * S;
+    const contentH = boardDisplayH + gap + trayBlockH;
+    const contentTop = hudH + (availH - contentH) / 2;
+    CY = contentTop + boardDisplayH / 2;
+    const trayY = contentTop + boardDisplayH + gap + trayBlockH / 2;
+
+    // 3 trays side by side, each ~4*TRAY_SPACEX wide, evenly spaced
+    const trayTotalW = 3 * 4 * TRAY_SPACEX;
+    const trayMargin = (W - trayTotalW) / 4;
+    TRAY_WHITE_CX = trayMargin + 2 * TRAY_SPACEX;
+    TRAY_BLACK_CX = 2 * trayMargin + 4 * TRAY_SPACEX + 2 * TRAY_SPACEX;
+    TRAY_GOLD_CX = W - trayMargin - 2 * TRAY_SPACEX;
+    TRAY_WHITE_CY = trayY;
+    TRAY_BLACK_CY = trayY;
+    TRAY_GOLD_CY = trayY;
+  } else if (useWide) {
     // Board centered vertically in available space
     CY = hudH + availH / 2;
     // Trays centered in the side margins, upper portion of board area
@@ -355,6 +406,8 @@ function resize() {
     TRAY_BLACK_CX = W - sideMargin / 2 - 12;
     TRAY_WHITE_CY = CY - S * 1.2;
     TRAY_BLACK_CY = CY - S * 1.2;
+    TRAY_GOLD_CX = CX;
+    TRAY_GOLD_CY = CY;
   } else {
     // Board in upper portion, both trays side-by-side below
     const boardDisplayH = boardCoeff * S;
@@ -369,6 +422,8 @@ function resize() {
     TRAY_BLACK_CX = CX + S * 2.2;
     TRAY_WHITE_CY = trayY;
     TRAY_BLACK_CY = trayY;
+    TRAY_GOLD_CX = CX;
+    TRAY_GOLD_CY = trayY;
   }
 
   updateSlots();
@@ -476,21 +531,23 @@ function updateSpecks(dt) {
 // ── Game State ─────────────────────────────────────────────────
 function freshState() {
   return {
-    phase: "mapSelect", // mapSelect, menuTransition, playing, roundResult, gameOver, confirm
+    phase: "playerCountSelect", // playerCountSelect, mapSelect, menuTransition, playing, roundResult, gameOver, confirm
     round: 1,
     turnCount: 0,
-    currentPlayer: 0, // 0=white, 1=black
+    currentPlayer: 0, // 0=white, 1=black, 2=gold
     firstPlayer: 0,   // who starts round 1
+    numPlayers: 2,     // 2 or 3
     gameMode: "regular", // "regular" or "hidden"
     mapType: "standard", // "standard" or "random"
     hiddenPiecesRevealed: false,
     whiteHiddenOrder: [1, 10],
     blackHiddenOrder: [1, 10],
-    board: new Array(21).fill(null), // null or {owner:0|1, value:1-10}
+    board: new Array(21).fill(null), // null or {owner:0|1|2, value:1-10}
     whitePieces: Array.from({length:10},(_,i)=>({value:i+1, used:false})),
     blackPieces: Array.from({length:10},(_,i)=>({value:i+1, used:false})),
+    goldPieces: Array.from({length:10},(_,i)=>({value:i+1, used:false})),
     selectedPiece: null, // {owner, value} or null
-    scores: [0, 0], // cumulative [white, black]
+    scores: [0, 0], // cumulative [white, black(, gold)]
     roundScores: [0, 0],
     goldenSlot: -1,
     // animation state per slot
@@ -527,7 +584,11 @@ function freshState() {
     // map select hover states
     hoverStandard: false,
     hoverRandom: false,
-    hoverBack: false
+    hoverBack: false,
+    // player count select hover states
+    hover2P: false,
+    hover3P: false,
+    hoverCountBack: false
   };
 }
 
@@ -543,7 +604,7 @@ let cpuSelectedMove = null; // {pieceValue, slotId}
 
 // Override initial phase if CPU mode
 if (CPU_MODE) {
-  state.phase = "difficultySelect";
+  state.phase = "playerCountSelect";
 }
 
 // ── Hidden Mode Helpers ───────────────────────────────────────
@@ -564,14 +625,33 @@ function getTrayDisplayOrder(owner) {
   if (state.gameMode !== "hidden") {
     return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   }
+  if (owner === 2) return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // Gold player: no hidden in 3P
   const hiddenOrder = owner === 0 ? state.whiteHiddenOrder : state.blackHiddenOrder;
   return [2, 3, 4, 5, 6, 7, 8, 9, hiddenOrder[0], hiddenOrder[1]];
 }
 
+function getPiecesForOwner(owner) {
+  if (owner === 0) return state.whitePieces;
+  if (owner === 1) return state.blackPieces;
+  return state.goldPieces;
+}
+
+function getPieceColors(owner) {
+  if (owner === 0) return { base: COL.white, hi: "#FFFFFF", sh: COL.whiteSh, label: COL.black };
+  if (owner === 1) return { base: COL.black, hi: COL.blackHi, sh: "#000000", label: COL.white };
+  return { base: COL.goldPlayer, hi: COL.goldPlayerHi, sh: COL.goldPlayerSh, label: COL.goldPlayerLabel };
+}
+
+function getPlayerName(playerIdx) {
+  if (playerIdx === 0) return CPU_MODE ? "You" : "White";
+  if (playerIdx === 1) return CPU_MODE ? "CPU1" : "Black";
+  return CPU_MODE ? "CPU2" : "Gold";
+}
+
 // ── Menu Button Layout ────────────────────────────────────────
 function getMenuButtons() {
-  const bw = Math.max(200, W * 0.27);
-  const bh = Math.max(40, H * 0.09);
+  const bw = Math.max(80, W * 0.27);
+  const bh = Math.max(16, H * 0.09);
   return {
     btn1: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
     btn2: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
@@ -583,12 +663,14 @@ function getMenuButtons() {
 const TRAY_COLS = 5, TRAY_ROWS = 2;
 
 function trayPiecePos(owner, index) {
-  const baseCx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
-  const baseCy = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
+  const baseCx = owner === 0 ? TRAY_WHITE_CX : owner === 1 ? TRAY_BLACK_CX : TRAY_GOLD_CX;
+  const baseCy = owner === 0 ? TRAY_WHITE_CY : owner === 1 ? TRAY_BLACK_CY : TRAY_GOLD_CY;
+  const spX = owner === 2 ? TRAY_GOLD_SPACEX : TRAY_SPACEX;
+  const spY = owner === 2 ? TRAY_GOLD_SPACEY : TRAY_SPACEY;
   const col = index % TRAY_COLS;
   const row = Math.floor(index / TRAY_COLS);
-  const x = baseCx + (col - 2) * TRAY_SPACEX;
-  const y = baseCy + (row - 0.5) * TRAY_SPACEY;
+  const x = baseCx + (col - 2) * spX;
+  const y = baseCy + (row - 0.5) * spY;
   return {x, y};
 }
 
@@ -637,7 +719,7 @@ function drawBevelTri(ctx, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, l
   }
   // label
   if (label !== undefined && label !== null) {
-    const fontSize = Math.max(14, s * 0.38)|0;
+    const fontSize = Math.max(5, s * 0.38)|0;
     ctx.font = `${fontSize}px 'VCR OSD Mono', monospace`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -790,7 +872,8 @@ function drawBoard(ctx, now) {
   ctx.translate(-CX, -CY);
 
   // Draw slots
-  for (let i = 0; i < 21; i++) {
+  const numSlots = SLOTS.length;
+  for (let i = 0; i < numSlots; i++) {
     const slot = SLOTS[i];
     const sa = state.slotAnim[i];
     const sx = CX + slot.x + sa.shakeX;
@@ -804,7 +887,9 @@ function drawBoard(ctx, now) {
     // Hover tint
     if (sa.hoverTint > 0 && state.selectedPiece) {
       drawTriPath(ctx, sx, sy, S, slot.ori);
-      const tintCol = state.currentPlayer === 0 ? "rgba(242,242,242," : "rgba(18,18,18,";
+      const pc = getPieceColors(state.currentPlayer);
+      const tintCol = state.currentPlayer === 0 ? "rgba(242,242,242," :
+                      state.currentPlayer === 2 ? "rgba(138,106,34," : "rgba(18,18,18,";
       ctx.fillStyle = tintCol + (sa.hoverTint * 0.12) + ")";
       ctx.fill();
     }
@@ -827,7 +912,7 @@ function drawBoard(ctx, now) {
         COL.scarletBright, "#FF6680", "#8B0A1E", "#5A0814", null, sa.scale);
       // Star symbol
       ctx.save();
-      const starSize = Math.max(14, PIECE_S * 0.38)|0;
+      const starSize = Math.max(5, PIECE_S * 0.38)|0;
       ctx.font = `bold ${starSize}px 'VCR OSD Mono', monospace`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = "#5A0814";
@@ -837,22 +922,20 @@ function drawBoard(ctx, now) {
     // Placed piece
     else if (state.board[i]) {
       const piece = state.board[i];
-      const isWhite = piece.owner === 0;
-      const bc = isWhite ? COL.white : COL.black;
-      const hc = isWhite ? "#FFFFFF" : COL.blackHi;
-      const sc = isWhite ? COL.whiteSh : "#000000";
-      const lc = isWhite ? COL.black : COL.white;
+      const pc = getPieceColors(piece.owner);
 
       // Glow for adjacent scoring highlight
       if (sa.glow > 0) {
         drawTriPath(ctx, sx, sy, PIECE_S + 8, slot.ori);
-        const glowCol = isWhite ? `rgba(242,242,242,${sa.glow*0.5})` : `rgba(100,100,100,${sa.glow*0.5})`;
+        const glowCol = piece.owner === 0 ? `rgba(242,242,242,${sa.glow*0.5})` :
+                         piece.owner === 2 ? `rgba(138,106,34,${sa.glow*0.5})` :
+                         `rgba(100,100,100,${sa.glow*0.5})`;
         ctx.fillStyle = glowCol;
         ctx.fill();
       }
 
       const isHidden = shouldHidePiece(piece.owner, piece.value);
-      drawBevelTri(ctx, sx, sy, PIECE_S, slot.ori, bc, hc, sc, lc, piece.value, sa.scale, isHidden);
+      drawBevelTri(ctx, sx, sy, PIECE_S, slot.ori, pc.base, pc.hi, pc.sh, pc.label, piece.value, sa.scale, isHidden);
     }
   }
 
@@ -861,7 +944,7 @@ function drawBoard(ctx, now) {
     if (fl.alpha > 0) {
       ctx.save();
       ctx.globalAlpha = fl.alpha;
-      ctx.font = `${Math.max(14, S * 0.32)|0}px 'VCR OSD Mono', monospace`;
+      ctx.font = `${Math.max(5, S * 0.32)|0}px 'VCR OSD Mono', monospace`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = fl.color;
       ctx.fillText(fl.text, CX + fl.x, CY + fl.y + fl.offsetY);
@@ -880,9 +963,10 @@ function drawTrays(ctx, now) {
   ctx.scale(zoom, zoom);
   ctx.translate(-CX, -CY);
 
-  for (let owner = 0; owner < 2; owner++) {
-    const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+  for (let owner = 0; owner < state.numPlayers; owner++) {
+    const pieces = getPiecesForOwner(owner);
     const displayOrder = getTrayDisplayOrder(owner);
+    const pieceS = owner === 2 ? TRAY_GOLD_PIECE_S : TRAY_PIECE_S;
 
     for (let i = 0; i < 10; i++) {
       const pieceValue = displayOrder[i];
@@ -890,7 +974,6 @@ function drawTrays(ctx, now) {
       if (p.used) continue;
 
       const pos = trayPiecePos(owner, i);
-      const tIdx = owner * 10 + i;
 
       let sc = 1;
 
@@ -903,15 +986,11 @@ function drawTrays(ctx, now) {
         sc = 1.05; // armed scale
       }
 
-      const isWhite = owner === 0;
-      const bc = isWhite ? COL.white : COL.black;
-      const hc = isWhite ? "#FFFFFF" : COL.blackHi;
-      const shc = isWhite ? COL.whiteSh : "#000000";
-      const lc = isWhite ? COL.black : COL.white;
+      const pc = getPieceColors(owner);
 
       // Blue glow if selected
       if (isSelected) {
-        drawTriPath(ctx, pos.x, pos.y, TRAY_PIECE_S + 6, "down");
+        drawTriPath(ctx, pos.x, pos.y, pieceS + 6, "down");
         ctx.strokeStyle = COL.accent;
         ctx.lineWidth = 3;
         ctx.shadowColor = COL.accent;
@@ -921,24 +1000,26 @@ function drawTrays(ctx, now) {
       }
 
       const isHidden = shouldHidePiece(owner, p.value);
-      drawBevelTri(ctx, pos.x, pos.y, TRAY_PIECE_S, "down", bc, hc, shc, lc, p.value, sc, isHidden);
+      drawBevelTri(ctx, pos.x, pos.y, pieceS, "down", pc.base, pc.hi, pc.sh, pc.label, p.value, sc, isHidden);
     }
 
     // Tray label
-    const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
-    const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
-    const labelSize = Math.max(22, TRAY_PIECE_S * 0.8)|0;
+    const lx = owner === 0 ? TRAY_WHITE_CX : owner === 1 ? TRAY_BLACK_CX : TRAY_GOLD_CX;
+    const ly = owner === 0 ? TRAY_WHITE_CY : owner === 1 ? TRAY_BLACK_CY : TRAY_GOLD_CY;
+    const labelSize = Math.max(8, pieceS * 0.8)|0;
     ctx.font = `${labelSize}px 'VCR OSD Mono', monospace`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const isActive = state.currentPlayer === owner && state.phase === "playing";
-    ctx.fillStyle = isActive ? COL.scarletBright : (owner === 0 ? "#AAA" : "#666");
-    let label;
-    if (CPU_MODE && owner === 1) {
-      label = isActive ? "CPU THINKING..." : "CPU";
+    const labelColors = ["#AAA", "#666", "#8A7A44"];
+    if (isActive) {
+      ctx.fillStyle = COL.scarletBright;
+      ctx.globalAlpha = 0.45 + 0.55 * Math.abs(Math.sin(now / 800));
     } else {
-      label = isActive ? "YOU" : "OPPONENT";
+      ctx.fillStyle = labelColors[owner];
     }
-    ctx.fillText(label, lx, ly - TRAY_PIECE_S * 1.7);
+    const names = CPU_MODE ? ["YOU", "CPU1", "CPU2"] : ["WHITE", "BLACK", "GOLD"];
+    ctx.fillText(names[owner], lx, ly - pieceS * 1.7);
+    ctx.globalAlpha = 1;
   }
 
   ctx.restore();
@@ -949,45 +1030,47 @@ function drawHUD(ctx, now) {
   if (state.phase !== "playing" && state.phase !== "menuTransition") return;
 
   // Scale fonts based on window height
-  const baseFontSize = Math.max(12, H * 0.03);
-  const margin = Math.max(16, W * 0.02);
-  const bezelPad = 12; // extra inset to clear CRT bezel frame
-
-  // Turn indicator (top center)
-  const playerName = CPU_MODE
-    ? (state.currentPlayer === 0 ? "White" : "CPU")
-    : (state.currentPlayer === 0 ? "White" : "Black");
-  const pulseA = 0.6 + 0.4 * Math.sin(now / 400);
+  const baseFontSize = Math.max(6, H * 0.03);
+  const margin = Math.max(8, W * 0.02);
+  const bezelPad = Math.max(4, H * 0.015);
+  const topY = margin + bezelPad;
 
   ctx.save();
-  ctx.font = `${(baseFontSize * 2.025)|0}px 'VCR OSD Mono', monospace`;
+
+  // Turn indicator (top center) — 25% larger than tray labels
+  const trayLabelSize = Math.max(8, TRAY_PIECE_S * 0.8)|0;
+  const turnFontSize = (trayLabelSize * 1.25)|0;
+  const names = ["WHITE", "BLACK", "GOLD"];
+  ctx.font = `${turnFontSize}px 'VCR OSD Mono', monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "top";
   ctx.fillStyle = COL.scarletBright;
-  ctx.globalAlpha = pulseA;
-  ctx.fillText(`${playerName.toUpperCase()} TO PLACE`, CX, margin + bezelPad);
-  ctx.globalAlpha = 1;
+  ctx.fillText(`${names[state.currentPlayer]} TO PLAY`, CX, topY);
 
-  // Round indicator (top left)
+  // Round indicator (top left — same row)
   ctx.font = `${(baseFontSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
-  ctx.textAlign = "left";
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
   ctx.fillStyle = "#AAB";
-  ctx.fillText(`ROUND ${state.round}/2`, margin + bezelPad, margin + bezelPad);
+  ctx.fillText(`ROUND ${state.round}/${state.numPlayers}`, margin + bezelPad, topY);
 
-  // Scores (top right, stacked)
+  // Scores (top right, stacked — same row)
   ctx.font = `${(baseFontSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
-  ctx.textAlign = "right";
+  ctx.textAlign = "right"; ctx.textBaseline = "top";
+  const hudNames = CPU_MODE ? ["YOU", "CPU1", "CPU2"] : ["WHITE", "BLACK", "GOLD"];
   ctx.fillStyle = COL.white;
-  ctx.fillText(`WHITE: ${state.scores[0]}`, W - margin - bezelPad, margin + bezelPad);
+  ctx.fillText(`${hudNames[0]}: ${state.scores[0]}`, W - margin - bezelPad, topY);
   ctx.fillStyle = "#999";
-  const blackLabel = CPU_MODE ? "CPU" : "Black";
-  ctx.fillText(`${blackLabel.toUpperCase()}: ${state.scores[1]}`, W - margin - bezelPad, margin + bezelPad + baseFontSize * 1.4);
+  ctx.fillText(`${hudNames[1]}: ${state.scores[1]}`, W - margin - bezelPad, topY + baseFontSize * 1.4);
+  if (state.numPlayers === 3) {
+    ctx.fillStyle = COL.goldPlayerLabel;
+    ctx.fillText(`${hudNames[2]}: ${state.scores[2]}`, W - margin - bezelPad, topY + baseFontSize * 2.8);
+  }
 
-  // Restart and Home buttons
-  const btnW = Math.max(50, W * 0.06);
-  const btnH = Math.max(24, H * 0.045);
-  const btnY = H - margin - btnH - bezelPad;
-  const restartBtn = {x: W - margin * 2 - btnW * 2 - bezelPad, y: btnY, w: btnW, h: btnH};
-  const homeBtn = {x: W - margin - btnW - bezelPad, y: btnY, w: btnW, h: btnH};
+  // Restart and Home buttons (under round tracker, top-left)
+  const btnW = Math.max(20, W * 0.06);
+  const btnH = Math.max(12, H * 0.045);
+  const btnY = topY + baseFontSize * 1.6;
+  const restartBtn = {x: margin + bezelPad, y: btnY, w: btnW, h: btnH};
+  const homeBtn = {x: margin + bezelPad + btnW + 4, y: btnY, w: btnW, h: btnH};
 
   // Restart button
   roundRect(ctx, restartBtn.x, restartBtn.y, restartBtn.w, restartBtn.h, 4);
@@ -1024,7 +1107,7 @@ function drawToasts(ctx, dt) {
     const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
     ctx.save();
     ctx.globalAlpha = Math.max(0, alpha);
-    ctx.font = `${Math.max(12, S * 0.28)|0}px 'VCR OSD Mono', monospace`;
+    ctx.font = `${Math.max(5, S * 0.28)|0}px 'VCR OSD Mono', monospace`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = COL.scarletBright;
     ctx.fillText(t.text, CX, H - 60);
@@ -1056,7 +1139,7 @@ function drawMenu(ctx) {
   ctx.restore();
 
   // Title
-  const titleSize = Math.max(52, Math.min(H * 0.22, 160));
+  const titleSize = Math.max(16, Math.min(H * 0.22, 160));
   ctx.font = `bold ${titleSize}px 'Allura', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.scarletBright;
@@ -1065,7 +1148,7 @@ function drawMenu(ctx) {
   // Start prompt
   const blink = Math.sin(performance.now() / 500) > 0 ? 1 : 0.5;
   ctx.globalAlpha = state.menuAlpha * blink;
-  const promptSize = Math.max(16, H * 0.04);
+  const promptSize = Math.max(6, H * 0.04);
   ctx.font = `${(promptSize * 0.75)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = COL.accent;
   ctx.fillText("PRESS SPACE / ENTER / CLICK TO START", CX, H * 0.63 + slideY);
@@ -1075,8 +1158,8 @@ function drawMenu(ctx) {
 
 // ── Difficulty Selection (CPU Mode) ──────────────────────────
 function getDifficultyButtons() {
-  const bw = Math.max(200, W * 0.27);
-  const bh = Math.max(40, H * 0.09);
+  const bw = Math.max(80, W * 0.27);
+  const bh = Math.max(16, H * 0.09);
   return {
     easy:   { x: CX - bw * 0.54, y: H * 0.30, w: bw * 1.08, h: bh * 1.6, r: 10 },
     medium: { x: CX - bw * 0.54, y: H * 0.46, w: bw * 1.08, h: bh * 1.6, r: 10 },
@@ -1104,15 +1187,15 @@ function drawDifficultySelect(ctx) {
   }
   ctx.restore();
 
-  const titleSize = Math.max(24, H * 0.067);
+  const titleSize = Math.max(8, H * 0.067);
   ctx.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.scarletBright;
   ctx.fillText("Select Difficulty", CX, H * 0.16);
 
   const btns = getDifficultyButtons();
-  const btnTitleSize = Math.max(18, H * 0.044);
-  const btnSubSize = Math.max(12, H * 0.026);
+  const btnTitleSize = Math.max(7, H * 0.044);
+  const btnSubSize = Math.max(5, H * 0.026);
 
   // Easy (muted teal, matches VS CPU)
   roundRect(ctx, btns.easy.x, btns.easy.y, btns.easy.w, btns.easy.h, btns.easy.r);
@@ -1158,7 +1241,7 @@ function drawDifficultySelect(ctx) {
   ctx.fillStyle = state.hoverDiffBack ? "#2A2024" : "#1E1618";
   ctx.fill();
   ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
-  ctx.font = "21px 'VCR OSD Mono', monospace";
+  ctx.font = `${Math.max(7, H * 0.038)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#AAB";
   ctx.fillText("BACK", CX, btns.back.y + btns.back.h / 2 - 3);
 
@@ -1186,15 +1269,15 @@ function drawMapSelect(ctx) {
   ctx.restore();
 
   // Title — matches online version styling
-  const titleSize = Math.max(24, H * 0.067);
+  const titleSize = Math.max(8, H * 0.067);
   ctx.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.scarletBright;
   ctx.fillText("Select Map", CX, H * 0.22);
 
   const btns = getMenuButtons();
-  const btnTitleSize = Math.max(18, H * 0.044);
-  const btnSubSize = Math.max(12, H * 0.026);
+  const btnTitleSize = Math.max(7, H * 0.044);
+  const btnSubSize = Math.max(5, H * 0.026);
 
   // Standard Map button (dusty rose)
   roundRect(ctx, btns.btn1.x, btns.btn1.y, btns.btn1.w, btns.btn1.h, btns.btn1.r);
@@ -1227,7 +1310,84 @@ function drawMapSelect(ctx) {
   ctx.fillStyle = state.hoverBack ? "#2A2024" : "#1E1618";
   ctx.fill();
   ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
-  ctx.font = "21px 'VCR OSD Mono', monospace";
+  ctx.font = `${Math.max(7, H * 0.038)|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#AAB";
+  ctx.fillText("BACK", CX, btns.back.y + btns.back.h / 2 - 3);
+
+  ctx.restore();
+}
+
+function getPlayerCountButtons() {
+  const bw = Math.max(80, W * 0.27);
+  const bh = Math.max(16, H * 0.09);
+  return {
+    btn1: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    btn2: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    back: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 }
+  };
+}
+
+function drawPlayerCountSelect(ctx) {
+  if (state.phase !== "playerCountSelect") return;
+  ctx.save();
+
+  ctx.fillStyle = "rgba(14,8,10,0.8)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Starry specks
+  ctx.save();
+  for (const s of specks) {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.shadowColor = `rgba(220,215,255,${s.a * 0.5})`;
+    ctx.shadowBlur = s.r * 4;
+    ctx.fillStyle = `rgba(230,225,240,${s.a * 0.8})`;
+    ctx.fill();
+  }
+  ctx.restore();
+
+  const titleSize = Math.max(8, H * 0.067);
+  ctx.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = COL.scarletBright;
+  ctx.fillText("How Many Players?", CX, H * 0.22);
+
+  const btns = getPlayerCountButtons();
+  const btnTitleSize = Math.max(7, H * 0.044);
+  const btnSubSize = Math.max(5, H * 0.026);
+
+  // 2 Players (dusty rose)
+  roundRect(ctx, btns.btn1.x, btns.btn1.y, btns.btn1.w, btns.btn1.h, btns.btn1.r);
+  ctx.fillStyle = state.hover2P ? "#2E2020" : "#241818";
+  ctx.fill();
+  ctx.strokeStyle = "#C47878";
+  ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#C47878";
+  ctx.fillText("2 PLAYERS", CX, btns.btn1.y + btns.btn1.h * 0.35);
+  ctx.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#889";
+  ctx.fillText("CLASSIC DUEL", CX, btns.btn1.y + btns.btn1.h * 0.68);
+
+  // 3 Players (warm amber)
+  roundRect(ctx, btns.btn2.x, btns.btn2.y, btns.btn2.w, btns.btn2.h, btns.btn2.r);
+  ctx.fillStyle = state.hover3P ? "#2E261A" : "#221C12";
+  ctx.fill();
+  ctx.strokeStyle = "#C4A068";
+  ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#C4A068";
+  ctx.fillText("3 PLAYERS", CX, btns.btn2.y + btns.btn2.h * 0.35);
+  ctx.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#889";
+  ctx.fillText("RANDOM MAP \u2022 3 ROUNDS", CX, btns.btn2.y + btns.btn2.h * 0.68);
+
+  // Back button
+  roundRect(ctx, btns.back.x, btns.back.y, btns.back.w, btns.back.h, btns.back.r);
+  ctx.fillStyle = state.hoverCountBack ? "#2A2024" : "#1E1618";
+  ctx.fill();
+  ctx.strokeStyle = "#667"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = `${Math.max(7, H * 0.038)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#AAB";
   ctx.fillText("BACK", CX, btns.back.y + btns.back.h / 2 - 3);
 
@@ -1243,8 +1403,8 @@ function drawConfirmDialog(ctx) {
   ctx.fillRect(0, 0, W, H);
 
   // Dialog box
-  const pw = Math.max(250, W * 0.33);
-  const ph = Math.max(150, H * 0.33);
+  const pw = Math.max(60, W * 0.33);
+  const ph = Math.max(50, H * 0.33);
   const px = CX - pw/2, py = CY - ph/2;
 
   roundRect(ctx, px, py, pw, ph, 12);
@@ -1255,15 +1415,15 @@ function drawConfirmDialog(ctx) {
   ctx.stroke();
 
   // Question
-  const questionSize = Math.max(18, H * 0.04);
+  const questionSize = Math.max(7, H * 0.04);
   ctx.font = `${(questionSize * 1.275)|0}px 'VCR OSD Mono', monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#DDE";
   ctx.fillText("ARE YOU SURE?", CX, py + ph * 0.28);
 
   // Yes button (lighter, prominent)
-  const btnW = Math.max(50, W * 0.06);
-  const btnH = Math.max(32, H * 0.06);
+  const btnW = Math.max(20, W * 0.06);
+  const btnH = Math.max(12, H * 0.06);
   const btnY = py + ph * 0.56;
   const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
   roundRect(ctx, yesBtn.x, yesBtn.y, yesBtn.w, yesBtn.h, 8);
@@ -1272,7 +1432,7 @@ function drawConfirmDialog(ctx) {
   ctx.strokeStyle = state.hoverYes ? COL.accent : "#8890A0";
   ctx.lineWidth = 2;
   ctx.stroke();
-  const btnFontSize = Math.max(14, H * 0.033);
+  const btnFontSize = Math.max(5, H * 0.033);
   ctx.font = `${(btnFontSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#E0E4EC";
   ctx.fillText("YES", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2 - 3);
@@ -1306,8 +1466,8 @@ function drawRoundResult(ctx) {
   ctx.scale(sc, sc);
   ctx.translate(-CX, -CY);
 
-  const pw = Math.max(280, W * 0.37);
-  const ph = Math.max(200, H * 0.44);
+  const pw = Math.max(60, W * 0.37);
+  const ph = Math.max(50, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
   ctx.fillStyle = "rgba(36,20,26,0.95)";
@@ -1316,29 +1476,38 @@ function drawRoundResult(ctx) {
   roundRect(ctx, px, py, pw, ph, 12);
   ctx.fill(); ctx.stroke();
 
-  const titleSize = Math.max(18, H * 0.04);
-  const scoreSize = Math.max(22, H * 0.055);
-  const promptSize = Math.max(14, H * 0.033);
+  const titleSize = Math.max(7, H * 0.04);
+  const scoreSize = Math.max(8, H * 0.055);
+  const promptSize = Math.max(5, H * 0.033);
 
   ctx.font = `${scoreSize}px 'VCR OSD Mono', monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = COL.scarletBright;
   ctx.fillText(`ROUND ${state.round} RESULTS`, CX, py + titleSize * 2);
 
-  const rrBlackLabel = CPU_MODE ? "CPU" : "Black";
+  const rrNames = CPU_MODE ? ["YOU", "CPU1", "CPU2"] : ["WHITE", "BLACK", "GOLD"];
   ctx.font = `${(scoreSize * 0.8)|0}px 'VCR OSD Mono', monospace`;
-  ctx.fillStyle = COL.white;
-  ctx.fillText(`WHITE: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize*3/8);
-  ctx.fillStyle = "#AAA";
-  ctx.fillText(`${rrBlackLabel.toUpperCase()}: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize*3/4);
+  if (state.numPlayers === 3) {
+    ctx.fillStyle = COL.white;
+    ctx.fillText(`${rrNames[0]}: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize);
+    ctx.fillStyle = "#AAA";
+    ctx.fillText(`${rrNames[1]}: ${state.roundScores[1]}`, CX, py + ph/2);
+    ctx.fillStyle = COL.goldPlayerLabel;
+    ctx.fillText(`${rrNames[2]}: ${state.roundScores[2]}`, CX, py + ph/2 + scoreSize);
+  } else {
+    ctx.fillStyle = COL.white;
+    ctx.fillText(`${rrNames[0]}: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize*3/8);
+    ctx.fillStyle = "#AAA";
+    ctx.fillText(`${rrNames[1]}: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize*3/4);
+  }
 
   // Continue prompt (same distance from bottom as title from top)
-  const promptSize2 = Math.max(11, H * 0.02);
+  const promptSize2 = Math.max(5, H * 0.02);
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   ctx.globalAlpha = blink;
   ctx.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = COL.accent;
-  const contText = state.round < 2 ? "SPACE / ENTER / CLICK: NEXT ROUND" : "SPACE / ENTER / CLICK: VIEW WINNER";
+  const contText = state.round < state.numPlayers ? "SPACE / ENTER / CLICK: NEXT ROUND" : "SPACE / ENTER / CLICK: VIEW WINNER";
   ctx.fillText(contText, CX, py + ph - titleSize * 2);
   ctx.globalAlpha = 1;
 
@@ -1352,8 +1521,8 @@ function drawGameOver(ctx) {
   ctx.fillStyle = "rgba(14,8,10,0.7)";
   ctx.fillRect(0, 0, W, H);
 
-  const pw = Math.max(280, W * 0.37);
-  const ph = Math.max(200, H * 0.44);
+  const pw = Math.max(60, W * 0.37);
+  const ph = Math.max(50, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
   ctx.fillStyle = "rgba(36,20,26,0.95)";
@@ -1364,9 +1533,18 @@ function drawGameOver(ctx) {
 
   // Winner heading
   let winner;
-  if (CPU_MODE) {
+  if (state.numPlayers === 3) {
+    const maxScore = Math.max(...state.scores);
+    const winners = state.scores.reduce((arr, s, i) => { if (s === maxScore) arr.push(i); return arr; }, []);
+    if (winners.length > 1) {
+      winner = "Draw!";
+    } else {
+      const names = CPU_MODE ? ["You Win!", "CPU1 Wins!", "CPU2 Wins!"] : ["White Wins!", "Black Wins!", "Gold Wins!"];
+      winner = names[winners[0]];
+    }
+  } else if (CPU_MODE) {
     if (state.scores[0] > state.scores[1]) winner = "You Win!";
-    else if (state.scores[1] > state.scores[0]) winner = "CPU Wins!";
+    else if (state.scores[1] > state.scores[0]) winner = "CPU1 Wins!";
     else winner = "Draw!";
   } else {
     if (state.scores[0] > state.scores[1]) winner = "White Wins!";
@@ -1374,8 +1552,8 @@ function drawGameOver(ctx) {
     else winner = "Draw!";
   }
 
-  const titleSize = Math.max(18, H * 0.04);
-  const scoreSize = Math.max(22, H * 0.055);
+  const titleSize = Math.max(7, H * 0.04);
+  const scoreSize = Math.max(8, H * 0.055);
 
   ctx.font = `${(scoreSize * 1.25)|0}px 'VCR OSD Mono', monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1383,15 +1561,24 @@ function drawGameOver(ctx) {
   ctx.fillText(winner.toUpperCase(), CX, py + titleSize * 2);
 
   // Final scores large and centered
-  const goBlackLabel = CPU_MODE ? "CPU" : "Black";
+  const goNames = CPU_MODE ? ["YOU", "CPU1", "CPU2"] : ["WHITE", "BLACK", "GOLD"];
   ctx.font = `${(scoreSize * 0.8)|0}px 'VCR OSD Mono', monospace`;
-  ctx.fillStyle = COL.white;
-  ctx.fillText(`WHITE: ${state.scores[0]}`, CX, py + ph/2 - scoreSize*3/8);
-  ctx.fillStyle = "#AAA";
-  ctx.fillText(`${goBlackLabel.toUpperCase()}: ${state.scores[1]}`, CX, py + ph/2 + scoreSize*3/4);
+  if (state.numPlayers === 3) {
+    ctx.fillStyle = COL.white;
+    ctx.fillText(`${goNames[0]}: ${state.scores[0]}`, CX, py + ph/2 - scoreSize);
+    ctx.fillStyle = "#AAA";
+    ctx.fillText(`${goNames[1]}: ${state.scores[1]}`, CX, py + ph/2);
+    ctx.fillStyle = COL.goldPlayerLabel;
+    ctx.fillText(`${goNames[2]}: ${state.scores[2]}`, CX, py + ph/2 + scoreSize);
+  } else {
+    ctx.fillStyle = COL.white;
+    ctx.fillText(`${goNames[0]}: ${state.scores[0]}`, CX, py + ph/2 - scoreSize*3/8);
+    ctx.fillStyle = "#AAA";
+    ctx.fillText(`${goNames[1]}: ${state.scores[1]}`, CX, py + ph/2 + scoreSize*3/4);
+  }
 
   // Continue (same distance from bottom as title from top)
-  const promptSize2 = Math.max(11, H * 0.02);
+  const promptSize2 = Math.max(5, H * 0.02);
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   ctx.globalAlpha = blink;
   ctx.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
@@ -1431,10 +1618,18 @@ function startMatch() {
   const oldPhase = state.phase;
   const savedGameMode = state.gameMode;
   const savedMapType = state.mapType;
+  const savedNumPlayers = state.numPlayers;
   state = freshState();
   state.gameMode = savedGameMode;
   state.mapType = savedMapType;
-  state.firstPlayer = Math.random() < 0.5 ? 0 : 1;
+  state.numPlayers = savedNumPlayers;
+  if (state.numPlayers === 3) {
+    state.scores = [0, 0, 0];
+    state.roundScores = [0, 0, 0];
+    state.board = new Array(31).fill(null);
+    state.slotAnim = Array.from({length:31}, ()=>({scale:1, shakeX:0, outlineFlash:0, glow:0, hoverTint:0}));
+  }
+  state.firstPlayer = Math.floor(Math.random() * state.numPlayers);
   state.currentPlayer = state.firstPlayer;
   state.round = 1;
   tweens = [];
@@ -1450,9 +1645,9 @@ function startMatch() {
   } else {
     randomMapData = null;
   }
-  updateSlots();
+  resize(); // Recalculate layout for current numPlayers
 
-  if (oldPhase === "mapSelect") {
+  if (oldPhase === "mapSelect" || oldPhase === "playerCountSelect" || oldPhase === "difficultySelect") {
     // Menu → Playing transition: 220ms fade + 12px upward slide
     state.phase = "menuTransition";
     state.menuAlpha = 1;
@@ -1467,14 +1662,16 @@ function startMatch() {
 }
 
 function startRound() {
-  state.board = new Array(21).fill(null);
+  const numSlots = (state.numPlayers === 3) ? 31 : 21;
+  state.board = new Array(numSlots).fill(null);
   state.whitePieces = Array.from({length:10},(_,i)=>({value:i+1, used:false}));
   state.blackPieces = Array.from({length:10},(_,i)=>({value:i+1, used:false}));
+  state.goldPieces = Array.from({length:10},(_,i)=>({value:i+1, used:false}));
   state.selectedPiece = null;
   state.turnCount = 0;
   state.goldenSlot = -1;
-  state.roundScores = [0, 0];
-  state.slotAnim = Array.from({length:21}, ()=>({scale:1, shakeX:0, outlineFlash:0, glow:0, hoverTint:0}));
+  state.roundScores = state.numPlayers === 3 ? [0, 0, 0] : [0, 0];
+  state.slotAnim = Array.from({length:numSlots}, ()=>({scale:1, shakeX:0, outlineFlash:0, glow:0, hoverTint:0}));
   state.floatLabels = [];
   state.revealStep = -1;
   state.intensityLevel = 0;
@@ -1486,12 +1683,8 @@ function startRound() {
   state.resultScale = 0;
   state.phase = "playing";
 
-  // Swap starting player for round 2
-  if (state.round === 2) {
-    state.currentPlayer = 1 - state.firstPlayer;
-  } else {
-    state.currentPlayer = state.firstPlayer;
-  }
+  // Rotate starting player: round 1 = firstPlayer, round 2 = (firstPlayer+1)%N, etc.
+  state.currentPlayer = (state.firstPlayer + state.round - 1) % state.numPlayers;
   killTweens("placement");
   killTweens("shake");
   killTweens("reveal");
@@ -1511,7 +1704,7 @@ function placePiece(slotId) {
   state.board[slotId] = {owner: piece.owner, value: piece.value};
 
   // Mark piece used
-  const pieces = piece.owner === 0 ? state.whitePieces : state.blackPieces;
+  const pieces = getPiecesForOwner(piece.owner);
   const p = pieces.find(pp => pp.value === piece.value);
   if (p) p.used = true;
 
@@ -1531,15 +1724,17 @@ function placePiece(slotId) {
   updateIntensity();
 
   // Check milestone toasts (remaining empty slots after this placement)
-  const remaining = 21 - state.turnCount;
+  const totalPlacements = state.numPlayers * 10;
+  const totalSlots = totalPlacements + 1;
+  const remaining = totalSlots - state.turnCount;
   if ([10, 5, 3, 2].includes(remaining)) {
     addToast(`${remaining} slot${remaining > 1 ? "s" : ""} left`);
     // Shimmer sweep
     addTween(state, "shimmer", 1, 0, 250, easeOut, null, "shimmer");
   }
 
-  // 20th placement - end of round
-  if (state.turnCount === 20) {
+  // Last placement - end of round
+  if (state.turnCount === totalPlacements) {
     // Zoom pulse
     addTween(state, "cameraZoom", 1.0, 1.03, 110, easeOut, () => {
       addTween(state, "cameraZoom", 1.03, 1.0, 110, easeInOut, null, "zoom");
@@ -1558,21 +1753,26 @@ function placePiece(slotId) {
   }
 
   // Swap turn
-  state.currentPlayer = 1 - state.currentPlayer;
+  state.currentPlayer = (state.currentPlayer + 1) % state.numPlayers;
   return true;
 }
 
 function updateIntensity() {
   const tc = state.turnCount;
-  if (tc >= 18) {
+  const total = state.numPlayers * 10;
+  // Scale thresholds proportionally: 50%, 75%, 90% of total
+  const t1 = Math.floor(total * 0.5);
+  const t2 = Math.floor(total * 0.75);
+  const t3 = Math.floor(total * 0.9);
+  if (tc >= t3) {
     state.outlineBrighten = 1;
     state.vignette = 1;
     state.gframeGlow = 1;
-  } else if (tc >= 15) {
+  } else if (tc >= t2) {
     state.outlineBrighten = 1;
     state.vignette = 1;
     state.gframeGlow = 0;
-  } else if (tc >= 10) {
+  } else if (tc >= t1) {
     state.outlineBrighten = 1;
     state.vignette = 0;
     state.gframeGlow = 0;
@@ -1587,14 +1787,14 @@ function beginReveal() {
 
   // Find the scarlet slot
   let emptySlot = -1;
-  for (let i = 0; i < 21; i++) {
+  for (let i = 0; i < state.board.length; i++) {
     if (state.board[i] == null) { emptySlot = i; break; }
   }
   state.goldenSlot = emptySlot;
 
   // Calculate scores
   const adj = ADJ[emptySlot];
-  state.roundScores = [0, 0];
+  state.roundScores = state.numPlayers === 3 ? [0, 0, 0] : [0, 0];
   const scoringPieces = [];
   for (const a of adj) {
     if (state.board[a]) {
@@ -1629,7 +1829,7 @@ function beginReveal() {
     setTimeout(() => {
       if (state.phase !== "playing" && state.phase !== "roundResult") return;
       const slot = SLOTS[sp.slot];
-      const col = sp.owner === 0 ? COL.white : "#AAA";
+      const col = sp.owner === 0 ? COL.white : sp.owner === 2 ? COL.goldPlayerLabel : "#AAA";
       state.floatLabels.push({
         x: slot.x, y: slot.y,
         text: `+${sp.value}`,
@@ -1645,26 +1845,29 @@ function beginReveal() {
   // Step 4: Show round result (at ~900ms)
   setTimeout(() => {
     if (state.phase !== "playing") return;
-    state.scores[0] += state.roundScores[0];
-    state.scores[1] += state.roundScores[1];
+    for (let p = 0; p < state.numPlayers; p++) {
+      state.scores[p] += state.roundScores[p];
+    }
     state.phase = "roundResult";
     addTween(state, "resultScale", 0.96, 1.0, 180, easeOut, null, "result");
   }, 900);
 }
 
 function advanceFromRoundResult() {
-  if (state.round < 2) {
-    state.round = 2;
+  if (state.round < state.numPlayers) {
+    state.round++;
     startRound();
   } else {
     state.phase = "gameOver";
     playSFX("arcade4");
-    // Check best margin
-    const margin = Math.abs(state.scores[0] - state.scores[1]);
-    let bestMargin = 0;
-    try { bestMargin = parseInt(localStorage.getItem("goldenTriangle_bestMargin")) || 0; } catch(e) {}
-    if (margin > bestMargin && margin > 0) {
-      try { localStorage.setItem("goldenTriangle_bestMargin", String(margin)); } catch(e) {}
+    // Check best margin (only for 2P)
+    if (state.numPlayers === 2) {
+      const margin = Math.abs(state.scores[0] - state.scores[1]);
+      let bestMargin = 0;
+      try { bestMargin = parseInt(localStorage.getItem("goldenTriangle_bestMargin")) || 0; } catch(e) {}
+      if (margin > bestMargin && margin > 0) {
+        try { localStorage.setItem("goldenTriangle_bestMargin", String(margin)); } catch(e) {}
+      }
     }
   }
 }
@@ -1689,25 +1892,27 @@ function pointInRect(px, py, r) {
 }
 
 function handleClick(canvasX, canvasY) {
-  // Difficulty select (CPU mode)
-  if (state.phase === "difficultySelect") {
-    const btns = getDifficultyButtons();
-    if (pointInRect(canvasX, canvasY, btns.easy)) {
+  // Player count select
+  if (state.phase === "playerCountSelect") {
+    const btns = getPlayerCountButtons();
+    if (pointInRect(canvasX, canvasY, btns.btn1)) {
       playSFX("keyclick", 0.125);
-      cpuDifficulty = "easy";
-      state.phase = "mapSelect";
+      state.numPlayers = 2;
+      state.phase = CPU_MODE ? "difficultySelect" : "mapSelect";
       return;
     }
-    if (pointInRect(canvasX, canvasY, btns.medium)) {
+    if (pointInRect(canvasX, canvasY, btns.btn2)) {
       playSFX("keyclick", 0.125);
-      cpuDifficulty = "medium";
-      state.phase = "mapSelect";
-      return;
-    }
-    if (pointInRect(canvasX, canvasY, btns.hard)) {
-      playSFX("keyclick", 0.125);
-      cpuDifficulty = "hard";
-      state.phase = "mapSelect";
+      state.numPlayers = 3;
+      state.mapType = "random";
+      state.scores = [0, 0, 0];
+      state.roundScores = [0, 0, 0];
+      if (CPU_MODE) {
+        state.phase = "difficultySelect";
+      } else {
+        // 3P always uses random map, skip map select
+        startMatch();
+      }
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.back)) {
@@ -1717,13 +1922,41 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
+  // Difficulty select (CPU mode)
+  if (state.phase === "difficultySelect") {
+    const btns = getDifficultyButtons();
+    if (pointInRect(canvasX, canvasY, btns.easy)) {
+      playSFX("keyclick", 0.125);
+      cpuDifficulty = "easy";
+      if (state.numPlayers === 3) { startMatch(); } else { state.phase = "mapSelect"; }
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.medium)) {
+      playSFX("keyclick", 0.125);
+      cpuDifficulty = "medium";
+      if (state.numPlayers === 3) { startMatch(); } else { state.phase = "mapSelect"; }
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.hard)) {
+      playSFX("keyclick", 0.125);
+      cpuDifficulty = "hard";
+      if (state.numPlayers === 3) { startMatch(); } else { state.phase = "mapSelect"; }
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.back)) {
+      state.phase = "playerCountSelect";
+      return;
+    }
+    return;
+  }
+
   // Confirmation dialog
   if (state.phase === "confirm") {
-    const pw = Math.max(250, W * 0.33);
-    const ph = Math.max(150, H * 0.33);
+    const pw = Math.max(60, W * 0.33);
+    const ph = Math.max(50, H * 0.33);
     const px = CX - pw/2, py = CY - ph/2;
-    const btnW = Math.max(50, W * 0.06);
-    const btnH = Math.max(32, H * 0.06);
+    const btnW = Math.max(20, W * 0.06);
+    const btnH = Math.max(12, H * 0.06);
     const btnY = py + ph * 0.56;
     const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
     const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
@@ -1733,7 +1966,7 @@ function handleClick(canvasX, canvasY) {
       if (state.confirmAction === "restart") {
         playSFX("keyclick", 0.125);
         state = freshState();
-        if (CPU_MODE) state.phase = "difficultySelect";
+        if (CPU_MODE) state.phase = "playerCountSelect";
         tweens = [];
         randomMapData = null;
         cpuThinkTimer = 0;
@@ -1775,7 +2008,7 @@ function handleClick(canvasX, canvasY) {
       if (CPU_MODE) {
         state.phase = "difficultySelect";
       } else {
-        sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
+        state.phase = "playerCountSelect";
       }
       return;
     }
@@ -1799,15 +2032,17 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
-  // Playing - check for button clicks
+  // Playing - check for button clicks (top-left, under round tracker)
   if (state.phase === "playing") {
-    const margin = Math.max(16, W * 0.02);
-    const bezelPad = 12;
-    const btnW = Math.max(50, W * 0.06);
-    const btnH = Math.max(24, H * 0.045);
-    const btnY = H - margin - btnH - bezelPad;
-    const restartBtn = {x: W - margin * 2 - btnW * 2 - bezelPad, y: btnY, w: btnW, h: btnH};
-    const homeBtn = {x: W - margin - btnW - bezelPad, y: btnY, w: btnW, h: btnH};
+    const baseFontSize = Math.max(6, H * 0.03);
+    const margin = Math.max(8, W * 0.02);
+    const bezelPad = Math.max(4, H * 0.015);
+    const topY = margin + bezelPad;
+    const btnW = Math.max(20, W * 0.06);
+    const btnH = Math.max(12, H * 0.045);
+    const btnY = topY + baseFontSize * 1.6;
+    const restartBtn = {x: margin + bezelPad, y: btnY, w: btnW, h: btnH};
+    const homeBtn = {x: margin + bezelPad + btnW + 4, y: btnY, w: btnW, h: btnH};
 
     if (pointInRect(canvasX, canvasY, restartBtn)) {
       playSFX("keyclick", 0.125);
@@ -1836,9 +2071,10 @@ function handleClick(canvasX, canvasY) {
   const adjY = CY + (canvasY - CY) / zoom;
 
   // Check tray clicks first
-  for (let owner = 0; owner < 2; owner++) {
-    const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+  for (let owner = 0; owner < state.numPlayers; owner++) {
+    const pieces = getPiecesForOwner(owner);
     const displayOrder = getTrayDisplayOrder(owner);
+    const hitPieceS = owner === 2 ? TRAY_GOLD_PIECE_S : TRAY_PIECE_S;
     for (let i = 0; i < 10; i++) {
       const pieceValue = displayOrder[i];
       const p = pieces[pieceValue - 1];
@@ -1848,7 +2084,7 @@ function handleClick(canvasX, canvasY) {
       const tpx = CX + (pos.x - CX);
       const tpy = CY + (pos.y - CY);
 
-      if (pointInTriPadded(adjX, adjY, tpx, tpy, TRAY_PIECE_S, "down", 8)) {
+      if (pointInTriPadded(adjX, adjY, tpx, tpy, hitPieceS, "down", 8)) {
         // Can only select own pieces
         if (owner !== state.currentPlayer) {
           // Denied feedback - but subtle, just ignore
@@ -1866,7 +2102,7 @@ function handleClick(canvasX, canvasY) {
   }
 
   // Check board slot clicks
-  for (let i = 0; i < 21; i++) {
+  for (let i = 0; i < SLOTS.length; i++) {
     const slot = SLOTS[i];
     const sx = CX + slot.x;
     const sy = CY + slot.y;
@@ -1932,17 +2168,27 @@ function updateShakeTweens(now) {
 function handleMouseMove(canvasX, canvasY) {
   // Confirmation dialog hovers
   if (state.phase === "confirm") {
-    const pw = Math.max(250, W * 0.33);
-    const ph = Math.max(150, H * 0.33);
+    const pw = Math.max(60, W * 0.33);
+    const ph = Math.max(50, H * 0.33);
     const px = CX - pw/2, py = CY - ph/2;
-    const btnW = Math.max(50, W * 0.06);
-    const btnH = Math.max(32, H * 0.06);
+    const btnW = Math.max(20, W * 0.06);
+    const btnH = Math.max(12, H * 0.06);
     const btnY = py + ph * 0.56;
     const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
     const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
 
     state.hoverYes = pointInRect(canvasX, canvasY, yesBtn);
     state.hoverNo = pointInRect(canvasX, canvasY, noBtn);
+    hoveredSlot = -1;
+    return;
+  }
+
+  // Player count select hovers
+  if (state.phase === "playerCountSelect") {
+    const btns = getPlayerCountButtons();
+    state.hover2P = pointInRect(canvasX, canvasY, btns.btn1);
+    state.hover3P = pointInRect(canvasX, canvasY, btns.btn2);
+    state.hoverCountBack = pointInRect(canvasX, canvasY, btns.back);
     hoveredSlot = -1;
     return;
   }
@@ -1968,15 +2214,17 @@ function handleMouseMove(canvasX, canvasY) {
     return;
   }
 
-  // Playing - button hovers
+  // Playing - button hovers (top-left, under round tracker)
   if (state.phase === "playing") {
-    const margin = Math.max(16, W * 0.02);
-    const bezelPad = 12;
-    const btnW = Math.max(50, W * 0.06);
-    const btnH = Math.max(24, H * 0.045);
-    const btnY = H - margin - btnH - bezelPad;
-    const restartBtn = {x: W - margin * 2 - btnW * 2 - bezelPad, y: btnY, w: btnW, h: btnH};
-    const homeBtn = {x: W - margin - btnW - bezelPad, y: btnY, w: btnW, h: btnH};
+    const baseFontSize = Math.max(6, H * 0.03);
+    const margin = Math.max(8, W * 0.02);
+    const bezelPad = Math.max(4, H * 0.015);
+    const topY = margin + bezelPad;
+    const btnW = Math.max(20, W * 0.06);
+    const btnH = Math.max(12, H * 0.045);
+    const btnY = topY + baseFontSize * 1.6;
+    const restartBtn = {x: margin + bezelPad, y: btnY, w: btnW, h: btnH};
+    const homeBtn = {x: margin + bezelPad + btnW + 4, y: btnY, w: btnW, h: btnH};
 
     state.hoverRestart = pointInRect(canvasX, canvasY, restartBtn);
     state.hoverHome = pointInRect(canvasX, canvasY, homeBtn);
@@ -1989,7 +2237,7 @@ function handleMouseMove(canvasX, canvasY) {
     const adjY = CY + (canvasY - CY) / zoom;
 
     let newHover = -1;
-    for (let i = 0; i < 21; i++) {
+    for (let i = 0; i < SLOTS.length; i++) {
       const slot = SLOTS[i];
       const sx = CX + slot.x, sy = CY + slot.y;
       if (pointInTriPadded(adjX, adjY, sx, sy, S, slot.ori, 6)) {
@@ -2053,13 +2301,15 @@ document.addEventListener("keydown", (e) => {
 
   // Escape to go back
   if (key === "Escape") {
-    if (state.phase === "difficultySelect") {
+    if (state.phase === "playerCountSelect") {
       sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
+    } else if (state.phase === "difficultySelect") {
+      state.phase = "playerCountSelect";
     } else if (state.phase === "mapSelect") {
       if (CPU_MODE) {
         state.phase = "difficultySelect";
       } else {
-        sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
+        state.phase = "playerCountSelect";
       }
     }
   }
@@ -2067,7 +2317,7 @@ document.addEventListener("keydown", (e) => {
 
 // ── CPU AI ─────────────────────────────────────────────────────
 function isCPUTurn() {
-  return CPU_MODE && state.phase === "playing" && state.currentPlayer === 1;
+  return CPU_MODE && state.phase === "playing" && state.currentPlayer !== 0;
 }
 
 function updateCPU(dt) {
@@ -2091,7 +2341,7 @@ function updateCPU(dt) {
 
   // Execute move
   if (cpuSelectedMove) {
-    state.selectedPiece = { owner: 1, value: cpuSelectedMove.pieceValue };
+    state.selectedPiece = { owner: state.currentPlayer, value: cpuSelectedMove.pieceValue };
     placePiece(cpuSelectedMove.slotId);
   }
   cpuMoveReady = false;
@@ -2106,12 +2356,12 @@ function computeCPUMove() {
 }
 
 function getAvailablePieces() {
-  return state.blackPieces.filter(p => !p.used);
+  return getPiecesForOwner(state.currentPlayer).filter(p => !p.used);
 }
 
 function getEmptySlots() {
   const empty = [];
-  for (let i = 0; i < 21; i++) {
+  for (let i = 0; i < state.board.length; i++) {
     if (state.board[i] == null) empty.push(i);
   }
   return empty;
@@ -2159,10 +2409,11 @@ function cpuMoveEasy() {
 // Calculate the golden slot value for an empty slot from CPU's perspective.
 // Positive = good for CPU if this becomes golden, negative = good for opponent.
 function goldenSlotDelta(slotId) {
+  const me = state.currentPlayer;
   let myVal = 0, oppVal = 0;
   for (const a of ADJ[slotId]) {
     if (state.board[a]) {
-      if (state.board[a].owner === 1) myVal += state.board[a].value;
+      if (state.board[a].owner === me) myVal += state.board[a].value;
       else oppVal += state.board[a].value;
     }
   }
@@ -2266,13 +2517,14 @@ function cpuMoveLastPiece(piece, slots) {
     const goldenSlot = slots[1 - i];
 
     // Score if goldenSlot becomes the golden triangle
+    const me = state.currentPlayer;
     let myScore = 0, oppScore = 0;
     for (const a of ADJ[goldenSlot]) {
       if (a === placeSlot) {
         // This is the piece we're placing
         myScore += piece.value;
       } else if (state.board[a]) {
-        if (state.board[a].owner === 1) myScore += state.board[a].value;
+        if (state.board[a].owner === me) myScore += state.board[a].value;
         else oppScore += state.board[a].value;
       }
     }
@@ -2333,7 +2585,7 @@ function evaluateHardMove(piece, slotId, allPieces, allSlots) {
   }
 
   // ── 4. PIECE ECONOMY ──
-  const gameProgress = state.turnCount / 20;
+  const gameProgress = state.turnCount / (state.numPlayers * 10);
   // Early game: save high-value pieces for when board is more developed
   if (gameProgress < 0.35 && piece.value >= 8) {
     score -= (piece.value - 7) * 2.5;
@@ -2357,7 +2609,7 @@ function evaluateHardMove(piece, slotId, allPieces, allSlots) {
     let oppAroundNeighbor = 0;
     for (const aa of ADJ[a]) {
       if (aa === slotId) continue;
-      if (state.board[aa] && state.board[aa].owner === 0) {
+      if (state.board[aa] && state.board[aa].owner !== state.currentPlayer) {
         oppAroundNeighbor += state.board[aa].value;
       }
     }
@@ -2406,6 +2658,7 @@ function frame(now) {
   // 5. UI overlays
   drawHUD(ctx, now);
   drawMenu(ctx);
+  drawPlayerCountSelect(ctx);
   if (CPU_MODE) drawDifficultySelect(ctx);
   drawMapSelect(ctx);
   drawRoundResult(ctx);
@@ -2593,7 +2846,7 @@ requestAnimationFrame(frame);
   setInterval(() => {
     const phase = typeof state !== 'undefined' ? state.phase : '';
     const onTitle = phase === 'menu' || phase === 'menuTransition';
-    const onSubmenu = phase === 'difficultySelect' || phase === 'mapSelect';
+    const onSubmenu = phase === 'playerCountSelect' || phase === 'difficultySelect' || phase === 'mapSelect';
     flickerEl.classList.toggle('active', onTitle);
     flickerEl.classList.toggle('submenu', onSubmenu);
     crtOverlay.classList.toggle('submenu', onSubmenu);

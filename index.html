@@ -32,6 +32,7 @@ const COL = {
   goldBase: "#C9A24A", goldHi: "#E7D08A", goldSh: "#8A6A22",
   white: "#F2F2F2", whiteSh: "#CFCFCF",
   black: "#121212", blackHi: "#3A3A3A",
+  goldPlayer: "#A48030", goldPlayerHi: "#C4A058", goldPlayerSh: "#6A4A12", goldPlayerLabel: "#E7D08A",
   slotOutline: "#8A8894",
   accent: "#C0C8D8",
   denied: "#FF5A6A",
@@ -170,7 +171,8 @@ function updateSlots() {
 updateSlots();
 
 // ── Random Map Generation ─────────────────────────────────────
-function generateRandomMap() {
+function generateRandomMap(targetSize) {
+  if (targetSize === undefined) targetSize = (state && state.numPlayers === 3) ? 31 : 21;
   const cells = [];
   const cellSet = new Set();
 
@@ -191,7 +193,7 @@ function generateRandomMap() {
   const frontier = new Set();
   for (const n of getNeighbors(0, 0)) frontier.add(key(n.gr, n.gc));
 
-  while (cells.length < 21) {
+  while (cells.length < targetSize) {
     const arr = Array.from(frontier);
     let cGr = 0, cGc = 0;
     for (const c of cells) { cGr += c.gr; cGc += c.gc; }
@@ -226,8 +228,8 @@ function generateRandomMap() {
   const cellMap = new Map();
   cells.forEach((cell, idx) => cellMap.set(key(cell.gr, cell.gc), idx));
 
-  const adj = Array.from({ length: 21 }, () => []);
-  for (let i = 0; i < 21; i++) {
+  const adj = Array.from({ length: targetSize }, () => []);
+  for (let i = 0; i < targetSize; i++) {
     const cell = cells[i];
     for (const n of getNeighbors(cell.gr, cell.gc)) {
       const nk = key(n.gr, n.gc);
@@ -243,6 +245,8 @@ const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let gDPR = 1;
 let TRAY_WHITE_CX, TRAY_BLACK_CX, TRAY_WHITE_CY, TRAY_BLACK_CY, TRAY_PIECE_S, TRAY_SPACEX, TRAY_SPACEY;
+let TRAY_GOLD_CX, TRAY_GOLD_CY;
+let TRAY_GOLD_PIECE_S, TRAY_GOLD_SPACEX, TRAY_GOLD_SPACEY;
 
 // ── Background Specks ──────────────────────────────────────────
 const specks = [];
@@ -259,25 +263,29 @@ function resize() {
   H = wh;
   CX = W / 2;
 
-  const hudH = Math.max(50, H * 0.065);
-  const buttonH = Math.max(35, H * 0.05);
+  const hudH = Math.max(20, H * 0.065);
+  const buttonH = Math.max(15, H * 0.05);
   const availH = H - hudH - buttonH;
 
   const boardCoeff = 6.5;
   const trayBlockCoeff = 1.44;
   const gapCoeff = 0.3;
 
+  let is3P = false;
+  try { is3P = state && state.numPlayers === 3; } catch(e) {}
+
   const S_wide_vert = availH / boardCoeff;
   const S_wide_horiz = W / 15.5;
   const S_wide = Math.min(S_wide_vert, S_wide_horiz);
 
   const S_narrow_vert = availH / (boardCoeff + gapCoeff + trayBlockCoeff);
-  const S_narrow_horiz = (W * 0.95) / 8;
+  const narrowHorizCoeff = is3P ? 12 : 8;
+  const S_narrow_horiz = (W * 0.95) / narrowHorizCoeff;
   const S_narrow = Math.min(S_narrow_vert, S_narrow_horiz);
 
   const useWide = S_wide >= S_narrow;
   S = useWide ? S_wide : S_narrow;
-  S = Math.max(20, S);
+  S = Math.max(8, S);
 
   TH = S * 0.8660254;
   PIECE_S = S * 0.88;
@@ -288,14 +296,54 @@ function resize() {
   TRAY_PIECE_S = S * 0.58;
   TRAY_SPACEX = S * 0.75;
   TRAY_SPACEY = S * 0.72;
+  TRAY_GOLD_PIECE_S = TRAY_PIECE_S;
+  TRAY_GOLD_SPACEX = TRAY_SPACEX;
+  TRAY_GOLD_SPACEY = TRAY_SPACEY;
 
-  if (useWide) {
+  if (is3P && useWide) {
+    // 3-player wide: same white/black as 2P wide, gold tray under white (or under black if overlapping)
     CY = hudH + availH / 2;
     const sideMargin = (W - 7 * S) / 2;
     TRAY_WHITE_CX = sideMargin / 2 + 12;
     TRAY_BLACK_CX = W - sideMargin / 2 - 12;
     TRAY_WHITE_CY = CY - S * 1.2;
     TRAY_BLACK_CY = CY - S * 1.2;
+    TRAY_GOLD_CX = TRAY_WHITE_CX;
+    TRAY_GOLD_CY = TRAY_WHITE_CY + TRAY_SPACEY * 2.8;
+    const goldTrayRight = TRAY_GOLD_CX + 2.5 * TRAY_SPACEX;
+    const boardLeft = CX - 3.5 * S;
+    if (goldTrayRight > boardLeft) {
+      TRAY_GOLD_CX = TRAY_BLACK_CX;
+      TRAY_GOLD_CY = TRAY_BLACK_CY + TRAY_SPACEY * 2.8;
+    }
+  } else if (is3P && !useWide) {
+    // 3-player narrow: board on top, all 3 trays side-by-side below (same size)
+    const boardDisplayH = boardCoeff * S;
+    const gap = gapCoeff * S;
+    const trayBlockH = trayBlockCoeff * S;
+    const contentH = boardDisplayH + gap + trayBlockH;
+    const contentTop = hudH + (availH - contentH) / 2;
+    CY = contentTop + boardDisplayH / 2;
+    const trayY = contentTop + boardDisplayH + gap + trayBlockH / 2;
+
+    // 3 trays side by side, each ~4*TRAY_SPACEX wide, evenly spaced
+    const trayTotalW = 3 * 4 * TRAY_SPACEX;
+    const trayMargin = (W - trayTotalW) / 4;
+    TRAY_WHITE_CX = trayMargin + 2 * TRAY_SPACEX;
+    TRAY_BLACK_CX = 2 * trayMargin + 4 * TRAY_SPACEX + 2 * TRAY_SPACEX;
+    TRAY_GOLD_CX = W - trayMargin - 2 * TRAY_SPACEX;
+    TRAY_WHITE_CY = trayY;
+    TRAY_BLACK_CY = trayY;
+    TRAY_GOLD_CY = trayY;
+  } else if (useWide) {
+    CY = hudH + availH / 2;
+    const sideMargin = (W - 7 * S) / 2;
+    TRAY_WHITE_CX = sideMargin / 2 + 12;
+    TRAY_BLACK_CX = W - sideMargin / 2 - 12;
+    TRAY_WHITE_CY = CY - S * 1.2;
+    TRAY_BLACK_CY = CY - S * 1.2;
+    TRAY_GOLD_CX = CX;
+    TRAY_GOLD_CY = CY;
   } else {
     const boardDisplayH = boardCoeff * S;
     const gap = gapCoeff * S;
@@ -309,6 +357,8 @@ function resize() {
     TRAY_BLACK_CX = CX + S * 2.2;
     TRAY_WHITE_CY = trayY;
     TRAY_BLACK_CY = trayY;
+    TRAY_GOLD_CX = CX;
+    TRAY_GOLD_CY = trayY;
   }
 
   updateSlots();
@@ -422,14 +472,16 @@ const Net = {
 
   createRoom(gameMode, mapType, mapData) {
     const code = this.generateRoomCode();
-    const firstPlayer = Math.random() < 0.5 ? 0 : 1;
+    const numPlayers = state.numPlayers || 2;
+    const firstPlayer = Math.floor(Math.random() * numPlayers);
 
     const roomData = {
       created: Date.now(),
       gameMode: gameMode || "regular",
       mapType: mapType || "standard",
       firstPlayer: firstPlayer,
-      players: { 0: true, 1: null }, // 0=creator present, 1=empty
+      numPlayers: numPlayers,
+      players: numPlayers === 3 ? { 0: true, 1: null, 2: null } : { 0: true, 1: null },
       gameState: null,
       status: "waiting"
     };
@@ -445,14 +497,24 @@ const Net = {
       state.lobbyError = "";
       state.gameMode = gameMode;
 
-      // Listen for player 2 joining
-      this.listen(this.roomRef.child('players/1'), 'value', (snapshot) => {
-        if (snapshot.val() === true && state.phase === "waiting") {
-          // Both players ready, start game
-          this.roomRef.update({status: 'playing'});
-          startOnlineMatch(firstPlayer);
-        }
-      });
+      if (numPlayers === 3) {
+        // Listen for all players joining (3P)
+        this.listen(this.roomRef.child('players'), 'value', (snapshot) => {
+          const players = snapshot.val();
+          if (players && players[1] === true && players[2] === true && state.phase === "waiting") {
+            this.roomRef.update({status: 'playing'});
+            startOnlineMatch(firstPlayer);
+          }
+        });
+      } else {
+        // Listen for player 2 joining (2P)
+        this.listen(this.roomRef.child('players/1'), 'value', (snapshot) => {
+          if (snapshot.val() === true && state.phase === "waiting") {
+            this.roomRef.update({status: 'playing'});
+            startOnlineMatch(firstPlayer);
+          }
+        });
+      }
 
       // Listen for game state changes
       this.setupGameStateListeners();
@@ -473,16 +535,27 @@ const Net = {
       }
 
       const room = snapshot.val();
-      if (room.players[1] === true) {
+      const roomNumPlayers = room.numPlayers || 2;
+
+      // Find first empty slot
+      let mySlot = -1;
+      for (let i = 1; i < roomNumPlayers; i++) {
+        if (!room.players || room.players[i] !== true) {
+          mySlot = i;
+          break;
+        }
+      }
+      if (mySlot === -1) {
         state.lobbyError = "Room is full";
         return;
       }
 
       this.roomCode = code;
-      this.myIndex = 1;
+      this.myIndex = mySlot;
       this.roomRef = roomRef;
       state.gameMode = room.gameMode;
       state.mapType = room.mapType || "standard";
+      state.numPlayers = roomNumPlayers;
       state.lobbyError = "";
 
       // Restore random map data if this is a random map game
@@ -493,9 +566,28 @@ const Net = {
       }
 
       // Join the room
-      roomRef.child('players/1').set(true).then(() => {
-        roomRef.update({status: 'playing'});
-        startOnlineMatch(room.firstPlayer);
+      roomRef.child(`players/${mySlot}`).set(true).then(() => {
+        if (roomNumPlayers === 3) {
+          // For 3P, check if all players are in before starting
+          roomRef.child('players').once('value').then(pSnap => {
+            const players = pSnap.val();
+            if (players && players[0] === true && players[1] === true && players[2] === true) {
+              roomRef.update({status: 'playing'});
+              startOnlineMatch(room.firstPlayer);
+            } else {
+              state.phase = "waiting";
+              // Listen for game to start when remaining player(s) join
+              this.listen(roomRef.child('status'), 'value', (snapshot) => {
+                if (snapshot.val() === 'playing' && state.phase === "waiting") {
+                  startOnlineMatch(room.firstPlayer);
+                }
+              });
+            }
+          });
+        } else {
+          roomRef.update({status: 'playing'});
+          startOnlineMatch(room.firstPlayer);
+        }
         this.setupGameStateListeners();
       });
     }).catch(err => {
@@ -505,14 +597,19 @@ const Net = {
   },
 
   setupGameStateListeners() {
-    // Listen for opponent's piece selection
-    const oppIndex = 1 - this.myIndex;
-    this.listen(this.roomRef.child(`actions/select_${oppIndex}`), 'value', (snapshot) => {
-      const value = snapshot.val();
-      if (value !== null) {
-        state.opponentSelectedValue = value;
-      }
-    });
+    // Listen for opponents' piece selections
+    const numPlayers = state.numPlayers || 2;
+    for (let i = 0; i < numPlayers; i++) {
+      if (i === this.myIndex) continue;
+      ((oppIndex) => {
+        this.listen(this.roomRef.child(`actions/select_${oppIndex}`), 'value', (snapshot) => {
+          const value = snapshot.val();
+          if (value !== null) {
+            state.opponentSelectedValue = value;
+          }
+        });
+      })(i);
+    }
 
     // Listen for piece placements
     this.listen(this.roomRef.child('gameState/placements'), 'child_added', (snapshot) => {
@@ -548,13 +645,18 @@ const Net = {
     });
 
     // Listen for opponent disconnect (only during active game)
-    this.listen(this.roomRef.child(`players/${1 - this.myIndex}`), 'value', (snapshot) => {
-      const isInGame = state.phase === "playing" || state.phase === "roundResult" || state.phase === "waitingAdvance" || state.phase === "gameOver";
-      if (snapshot.val() === null && isInGame) {
-        state.phase = "disconnected";
-        state.disconnectTimer = 3000;
-      }
-    });
+    for (let i = 0; i < numPlayers; i++) {
+      if (i === this.myIndex) continue;
+      ((oppIndex) => {
+        this.listen(this.roomRef.child(`players/${oppIndex}`), 'value', (snapshot) => {
+          const isInGame = state.phase === "playing" || state.phase === "roundResult" || state.phase === "waitingAdvance" || state.phase === "gameOver";
+          if (snapshot.val() === null && isInGame) {
+            state.phase = "disconnected";
+            state.disconnectTimer = 3000;
+          }
+        });
+      })(i);
+    }
   },
 
   selectPiece(value) {
@@ -566,12 +668,13 @@ const Net = {
   placePiece(slotId, value) {
     if (!this.roomRef) return;
 
+    const totalPlacements = (state.numPlayers || 2) * 10;
     const placement = {
       slotId,
       value,
       owner: this.myIndex,
       turnCount: state.turnCount + 1,
-      nextPlayer: state.turnCount === 19 ? -1 : (1 - state.currentPlayer),
+      nextPlayer: state.turnCount === totalPlacements - 1 ? -1 : (state.currentPlayer + 1) % (state.numPlayers || 2),
       timestamp: Date.now()
     };
 
@@ -581,8 +684,8 @@ const Net = {
     // Apply locally
     applyPlacement(slotId, value, this.myIndex, placement.turnCount, placement.nextPlayer);
 
-    // Check if this is the 20th placement
-    if (placement.turnCount === 20) {
+    // Check if this is the last placement
+    if (placement.turnCount === totalPlacements) {
       setTimeout(() => {
         this.sendRoundResult();
       }, 1200);
@@ -592,14 +695,15 @@ const Net = {
   sendRoundResult() {
     // Find the scarlet slot (empty slot)
     let emptySlot = -1;
-    for (let i = 0; i < 21; i++) {
+    for (let i = 0; i < state.board.length; i++) {
       if (state.board[i] == null) { emptySlot = i; break; }
     }
     state.goldenSlot = emptySlot;
 
     // Calculate scores
     const adj = ADJ[emptySlot];
-    state.roundScores = [0, 0];
+    const numPlayers = state.numPlayers || 2;
+    state.roundScores = new Array(numPlayers).fill(0);
     for (const a of adj) {
       if (state.board[a]) {
         const piece = state.board[a];
@@ -608,8 +712,9 @@ const Net = {
     }
 
     // Update total scores
-    state.scores[0] += state.roundScores[0];
-    state.scores[1] += state.roundScores[1];
+    for (let p = 0; p < numPlayers; p++) {
+      state.scores[p] += state.roundScores[p];
+    }
 
     // Send to Firebase
     this.roomRef.child('gameState/roundResult').set({
@@ -623,30 +728,45 @@ const Net = {
 
   advanceRound() {
     this.roomRef.child(`gameState/advance_${this.myIndex}`).set(true);
+    const numPlayers = state.numPlayers || 2;
 
-    // Check if both players ready
+    // Check if all players ready
     this.roomRef.child('gameState').once('value').then(snapshot => {
       const gs = snapshot.val();
-      if (gs && gs.advance_0 && gs.advance_1) {
-        // Both ready
-        if (state.round < 2) {
-          // Start round 2
-          this.roomRef.child('gameState').update({
+      if (!gs) return;
+
+      let allReady = true;
+      for (let i = 0; i < numPlayers; i++) {
+        if (!gs[`advance_${i}`]) { allReady = false; break; }
+      }
+
+      if (allReady) {
+        if (state.round < numPlayers) {
+          // Start next round
+          const updateData = {
             roundStart: {
-              round: 2,
-              firstPlayer: 1 - state.firstPlayer,
+              round: state.round + 1,
+              firstPlayer: (state.firstPlayer + state.round) % numPlayers,
               timestamp: Date.now()
             },
             placements: null,
             roundResult: null,
             advance_0: null,
             advance_1: null
-          });
+          };
+          if (numPlayers === 3) updateData.advance_2 = null;
+          this.roomRef.child('gameState').update(updateData);
         } else {
           // Game over
           let winner = -1;
-          if (state.scores[0] > state.scores[1]) winner = 0;
-          else if (state.scores[1] > state.scores[0]) winner = 1;
+          if (numPlayers === 3) {
+            const maxScore = Math.max(...state.scores);
+            const winners = state.scores.reduce((arr, s, i) => { if (s === maxScore) arr.push(i); return arr; }, []);
+            if (winners.length === 1) winner = winners[0];
+          } else {
+            if (state.scores[0] > state.scores[1]) winner = 0;
+            else if (state.scores[1] > state.scores[0]) winner = 1;
+          }
 
           this.roomRef.child('gameState/gameOver').set({
             totalScores: state.scores,
@@ -678,6 +798,7 @@ function freshState() {
     turnCount: 0,
     currentPlayer: 0,
     firstPlayer: 0,
+    numPlayers: 2,
     gameMode: "regular", // regular or hidden
     mapType: "standard", // "standard" or "random"
     hiddenPiecesRevealed: false,
@@ -686,6 +807,7 @@ function freshState() {
     board: new Array(21).fill(null),
     whitePieces: Array.from({length:10},(_,i)=>({value:i+1,used:false})),
     blackPieces: Array.from({length:10},(_,i)=>({value:i+1,used:false})),
+    goldPieces: Array.from({length:10},(_,i)=>({value:i+1,used:false})),
     selectedPiece: null,
     opponentSelectedValue: null,
     scores: [0, 0],
@@ -723,6 +845,10 @@ function freshState() {
     hoverHidden: false,
     hoverStartJoin: false,
     hoverBackJoin: false,
+    // player count select hover states
+    hover2P: false,
+    hover3P: false,
+    hoverCountBack: false,
     // map select hover states
     hoverStandard: false,
     hoverRandom: false,
@@ -737,6 +863,18 @@ function freshState() {
 }
 
 let state = freshState();
+
+function getPiecesForOwner(owner) {
+  if (owner === 0) return state.whitePieces;
+  if (owner === 1) return state.blackPieces;
+  return state.goldPieces;
+}
+
+function getPieceColors(owner) {
+  if (owner === 0) return { base: COL.white, hi: "#FFFFFF", sh: COL.whiteSh, label: COL.black };
+  if (owner === 1) return { base: COL.black, hi: COL.blackHi, sh: "#000000", label: COL.white };
+  return { base: COL.goldPlayer, hi: COL.goldPlayerHi, sh: COL.goldPlayerSh, label: COL.goldPlayerLabel };
+}
 
 // ── Boot Animation ────────────────────────────────────────────
 const skipBoot = sessionStorage.getItem("skipBoot");
@@ -778,9 +916,19 @@ function startOnlineMatch(firstPlayer) {
   const oldPhase = state.phase;
   const savedGameMode = state.gameMode;
   const savedMapType = state.mapType;
+  const savedNumPlayers = state.numPlayers;
   state = freshState();
   state.gameMode = savedGameMode;
   state.mapType = savedMapType;
+  state.numPlayers = savedNumPlayers;
+
+  if (state.numPlayers === 3) {
+    state.scores = [0, 0, 0];
+    state.roundScores = [0, 0, 0];
+    const numSlots = 31;
+    state.board = new Array(numSlots).fill(null);
+    state.slotAnim = Array.from({length: numSlots}, () => ({scale:1,shakeX:0,outlineFlash:0,glow:0,hoverTint:0}));
+  }
 
   // Initialize randomized hidden piece order for hidden mode
   if (state.gameMode === "hidden") {
@@ -792,7 +940,7 @@ function startOnlineMatch(firstPlayer) {
   if (state.mapType !== "random") {
     randomMapData = null;
   }
-  updateSlots();
+  resize();
 
   state.firstPlayer = firstPlayer;
   state.currentPlayer = firstPlayer;
@@ -802,16 +950,18 @@ function startOnlineMatch(firstPlayer) {
 }
 
 function startOnlineRound(round, firstPlayer) {
-  state.board = new Array(21).fill(null);
+  const numSlots = (state.numPlayers === 3) ? 31 : 21;
+  state.board = new Array(numSlots).fill(null);
   state.whitePieces = Array.from({length:10},(_,i)=>({value:i+1,used:false}));
   state.blackPieces = Array.from({length:10},(_,i)=>({value:i+1,used:false}));
+  state.goldPieces = Array.from({length:10},(_,i)=>({value:i+1,used:false}));
   state.selectedPiece = null;
   state.opponentSelectedValue = null;
   state.turnCount = 0;
   state.goldenSlot = -1;
-  state.roundScores = [0, 0];
+  state.roundScores = state.numPlayers === 3 ? [0, 0, 0] : [0, 0];
   state.hiddenPiecesRevealed = false;
-  state.slotAnim = Array.from({length:21},()=>({scale:1,shakeX:0,outlineFlash:0,glow:0,hoverTint:0}));
+  state.slotAnim = Array.from({length: numSlots},()=>({scale:1,shakeX:0,outlineFlash:0,glow:0,hoverTint:0}));
   state.floatLabels = [];
   state.revealStep = -1;
   state.intensityLevel = 0;
@@ -833,7 +983,7 @@ function applyPlacement(slotId, value, owner, turnCount, nextPlayer) {
   state.board[slotId] = { owner, value };
 
   // Mark piece used
-  const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+  const pieces = getPiecesForOwner(owner);
   const p = pieces.find(pp => pp.value === value);
   if (p) p.used = true;
 
@@ -854,14 +1004,14 @@ function applyPlacement(slotId, value, owner, turnCount, nextPlayer) {
   updateIntensity();
 
   // Milestone toasts
-  const remaining = 21 - turnCount;
+  const remaining = (state.numPlayers * 10 + 1) - turnCount;
   if ([10, 5, 3, 2].includes(remaining)) {
     addToast(`${remaining} slot${remaining > 1 ? "s" : ""} left`);
     addTween(state, "shimmer", 1, 0, 250, easeOut, null, "shimmer");
   }
 
-  // 20th placement effects
-  if (turnCount === 20) {
+  // Last placement effects
+  if (turnCount === state.numPlayers * 10) {
     addTween(state, "cameraZoom", 1.0, 1.03, 110, easeOut, () => {
       addTween(state, "cameraZoom", 1.03, 1.0, 110, easeInOut, null, "zoom");
     }, "zoom");
@@ -917,7 +1067,7 @@ function continueRevealOnline(goldenSlot) {
     setTimeout(() => {
       if (state.phase !== "playing" && state.phase !== "roundResult") return;
       const slot = SLOTS[sp.slot];
-      const col = sp.owner === 0 ? COL.white : "#AAA";
+      const col = sp.owner === 0 ? COL.white : sp.owner === 2 ? COL.goldPlayerLabel : "#AAA";
       state.floatLabels.push({ x: slot.x, y: slot.y, text: `+${sp.value}`, color: col, offsetY: 0, alpha: 1, timer: 0, dur: 350 });
     }, labelStart);
   });
@@ -933,7 +1083,7 @@ function showOnlineGameOver(totalScores, winner) {
   state.scores = totalScores;
   state.phase = "gameOver";
   playSFX("arcade4");
-  state._onlineWinner = winner; // -1=draw, 0=white, 1=black
+  state._onlineWinner = winner; // -1=draw, 0=white, 1=black, 2=gold
 }
 
 function returnToLobby() {
@@ -955,11 +1105,15 @@ function returnToLobby() {
 const TRAY_COLS = 5, TRAY_ROWS = 2;
 
 function trayPiecePos(owner, index) {
-  const baseCx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
-  const baseCy = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
+  const baseCx = owner === 0 ? TRAY_WHITE_CX : owner === 1 ? TRAY_BLACK_CX : TRAY_GOLD_CX;
+  const baseCy = owner === 0 ? TRAY_WHITE_CY : owner === 1 ? TRAY_BLACK_CY : TRAY_GOLD_CY;
+  const spX = owner === 2 ? TRAY_GOLD_SPACEX : TRAY_SPACEX;
+  const spY = owner === 2 ? TRAY_GOLD_SPACEY : TRAY_SPACEY;
   const col = index % TRAY_COLS;
   const row = Math.floor(index / TRAY_COLS);
-  return { x: baseCx + (col - 2) * TRAY_SPACEX, y: baseCy + (row - 0.5) * TRAY_SPACEY };
+  const x = baseCx + (col - 2) * spX;
+  const y = baseCy + (row - 0.5) * spY;
+  return {x, y};
 }
 
 // Get the display order for tray pieces (for hidden mode: 2,3,4,5,6,7,8,9, then randomized 1 and 10)
@@ -967,6 +1121,7 @@ function getTrayDisplayOrder(owner) {
   if (state.gameMode !== "hidden") {
     return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   }
+  if (owner === 2) return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // Gold player: no hidden in 3P
   const hiddenOrder = owner === 0 ? state.whiteHiddenOrder : state.blackHiddenOrder;
   return [2, 3, 4, 5, 6, 7, 8, 9, hiddenOrder[0], hiddenOrder[1]];
 }
@@ -1015,7 +1170,7 @@ function drawBevelTri(c, cx, cy, side, ori, baseCol, hiCol, shCol, labelCol, lab
     c.strokeStyle=shCol; c.lineWidth=4; c.stroke();
   }
   if (label !== undefined && label !== null) {
-    const fontSize = Math.max(14, s * 0.38)|0;
+    const fontSize = Math.max(5, s * 0.38)|0;
     c.font = `${fontSize}px 'VCR OSD Mono', monospace`;
     c.textAlign = "center"; c.textBaseline = "middle";
     const labelOff = 0;
@@ -1102,7 +1257,7 @@ function drawBoard(c, now) {
   c.save();
   c.translate(CX,CY); c.scale(zoom,zoom); c.translate(-CX,-CY);
 
-  for (let i = 0; i < 21; i++) {
+  for (let i = 0; i < SLOTS.length; i++) {
     const slot = SLOTS[i];
     const sa = state.slotAnim[i];
     const sx = CX + slot.x + sa.shakeX, sy = CY + slot.y;
@@ -1112,7 +1267,8 @@ function drawBoard(c, now) {
 
     if (sa.hoverTint > 0 && state.selectedPiece) {
       drawTriPath(c, sx, sy, S, slot.ori);
-      const tintCol = state.currentPlayer === 0 ? "rgba(242,242,242," : "rgba(18,18,18,";
+      const tintCol = state.currentPlayer === 0 ? "rgba(242,242,242," :
+                      state.currentPlayer === 2 ? "rgba(138,106,34," : "rgba(18,18,18,";
       c.fillStyle = tintCol + (sa.hoverTint * 0.12) + ")"; c.fill();
     }
 
@@ -1127,29 +1283,30 @@ function drawBoard(c, now) {
     if (state.goldenSlot === i) {
       drawBevelTri(c, sx, sy, PIECE_S, slot.ori, COL.scarletBright, "#FF6680", "#8B0A1E", "#5A0814", null, sa.scale);
       c.save();
-      const starSize = Math.max(14, PIECE_S * 0.38)|0;
+      const starSize = Math.max(5, PIECE_S * 0.38)|0;
       c.font = `bold ${starSize}px 'VCR OSD Mono', monospace`; c.textAlign = "center"; c.textBaseline = "middle";
       c.fillStyle = "#5A0814"; c.fillText("\u2605", sx, sy);
       c.restore();
     } else if (state.board[i]) {
       const piece = state.board[i];
-      const isWhite = piece.owner === 0;
-      const bc=isWhite?COL.white:COL.black, hc=isWhite?"#FFFFFF":COL.blackHi;
-      const sc=isWhite?COL.whiteSh:"#000000", lc=isWhite?COL.black:COL.white;
+      const pc = getPieceColors(piece.owner);
       if (sa.glow > 0) {
         drawTriPath(c, sx, sy, PIECE_S+8, slot.ori);
-        c.fillStyle = isWhite?`rgba(242,242,242,${sa.glow*0.5})`:`rgba(100,100,100,${sa.glow*0.5})`;
+        const glowCol = piece.owner === 0 ? `rgba(242,242,242,${sa.glow*0.5})` :
+                         piece.owner === 2 ? `rgba(138,106,34,${sa.glow*0.5})` :
+                         `rgba(100,100,100,${sa.glow*0.5})`;
+        c.fillStyle = glowCol;
         c.fill();
       }
       const isHidden = shouldHidePiece(piece.owner, piece.value);
-      drawBevelTri(c, sx, sy, PIECE_S, slot.ori, bc, hc, sc, lc, piece.value, sa.scale, isHidden);
+      drawBevelTri(c, sx, sy, PIECE_S, slot.ori, pc.base, pc.hi, pc.sh, pc.label, piece.value, sa.scale, isHidden);
     }
   }
 
   for (const fl of state.floatLabels) {
     if (fl.alpha > 0) {
       c.save(); c.globalAlpha=fl.alpha;
-      c.font=`${Math.max(14, S * 0.32)|0}px 'VCR OSD Mono', monospace`; c.textAlign="center"; c.textBaseline="middle";
+      c.font=`${Math.max(5, S * 0.32)|0}px 'VCR OSD Mono', monospace`; c.textAlign="center"; c.textBaseline="middle";
       c.fillStyle=fl.color; c.fillText(fl.text, CX+fl.x, CY+fl.y+fl.offsetY);
       c.restore();
     }
@@ -1165,9 +1322,10 @@ function drawTrays(c, now) {
 
   const myIdx = Net.myIndex;
 
-  for (let owner = 0; owner < 2; owner++) {
-    const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+  for (let owner = 0; owner < state.numPlayers; owner++) {
+    const pieces = getPiecesForOwner(owner);
     const displayOrder = getTrayDisplayOrder(owner);
+    const pieceS = owner === 2 ? TRAY_GOLD_PIECE_S : TRAY_PIECE_S;
 
     for (let i = 0; i < 10; i++) {
       const pieceValue = displayOrder[i];
@@ -1183,17 +1341,15 @@ function drawTrays(c, now) {
 
       if (isSelected) sc = 1.05;
 
-      const isWhite = owner === 0;
-      const bc=isWhite?COL.white:COL.black, hc=isWhite?"#FFFFFF":COL.blackHi;
-      const shc=isWhite?COL.whiteSh:"#000000", lc=isWhite?COL.black:COL.white;
+      const pc = getPieceColors(owner);
 
       if (isSelected) {
-        drawTriPath(c, pos.x, pos.y, TRAY_PIECE_S+6, "down");
+        drawTriPath(c, pos.x, pos.y, pieceS+6, "down");
         c.strokeStyle = COL.accent; c.lineWidth = 3;
         c.shadowColor = COL.accent; c.shadowBlur = 8;
         c.stroke(); c.shadowBlur = 0;
       } else if (isOpponentSelected) {
-        drawTriPath(c, pos.x, pos.y, TRAY_PIECE_S+6, "down");
+        drawTriPath(c, pos.x, pos.y, pieceS+6, "down");
         c.strokeStyle = COL.denied; c.lineWidth = 2;
         c.globalAlpha = 0.5; c.stroke(); c.globalAlpha = 1;
       }
@@ -1201,21 +1357,28 @@ function drawTrays(c, now) {
       // Dim opponent's tray slightly
       if (owner !== myIdx) c.globalAlpha = 0.6;
       const isHidden = shouldHidePiece(owner, p.value);
-      drawBevelTri(c, pos.x, pos.y, TRAY_PIECE_S, "down", bc, hc, shc, lc, p.value, sc, isHidden);
+      drawBevelTri(c, pos.x, pos.y, pieceS, "down", pc.base, pc.hi, pc.sh, pc.label, p.value, sc, isHidden);
       c.globalAlpha = 1;
     }
 
-    // Tray labels - "YOU" / "OPPONENT"
-    const lx = owner === 0 ? TRAY_WHITE_CX : TRAY_BLACK_CX;
-    const ly = owner === 0 ? TRAY_WHITE_CY : TRAY_BLACK_CY;
-    const labelSize = Math.max(22, TRAY_PIECE_S * 0.8)|0;
+    // Tray label
+    const lx = owner === 0 ? TRAY_WHITE_CX : owner === 1 ? TRAY_BLACK_CX : TRAY_GOLD_CX;
+    const ly = owner === 0 ? TRAY_WHITE_CY : owner === 1 ? TRAY_BLACK_CY : TRAY_GOLD_CY;
+    const labelSize = Math.max(8, pieceS * 0.8)|0;
     c.font = `${labelSize}px 'VCR OSD Mono', monospace`;
     c.textAlign = "center"; c.textBaseline = "middle";
     const isActive = state.currentPlayer === owner && state.phase === "playing";
-    c.fillStyle = isActive ? COL.scarletBright : (owner === 0 ? "#AAA" : "#666");
-
-    const label = owner === myIdx ? "YOU" : "OPPONENT";
-    c.fillText(label, lx, ly - TRAY_PIECE_S * 1.7);
+    const labelColors = ["#AAA", "#666", "#8A7A44"];
+    if (isActive) {
+      c.fillStyle = COL.scarletBright;
+      c.globalAlpha = 0.45 + 0.55 * Math.abs(Math.sin(now / 800));
+    } else {
+      c.fillStyle = labelColors[owner];
+    }
+    const names = ["WHITE", "BLACK", "GOLD"];
+    const trayLabel = (owner === Net.myIndex) ? "YOU" : names[owner];
+    c.fillText(trayLabel, lx, ly - pieceS * 1.7);
+    c.globalAlpha = 1;
   }
 
   c.restore();
@@ -1224,49 +1387,56 @@ function drawTrays(c, now) {
 // ── HUD ────────────────────────────────────────────────────────
 function drawHUD(c, now) {
   if (state.phase !== "playing") return;
-  const myIdx = Net.myIndex;
-  const isMyTurn = state.currentPlayer === myIdx;
-  const pulseA = 0.6 + 0.4 * Math.sin(now / 400);
 
-  const baseFontSize = Math.max(12, H * 0.03);
-  const margin = Math.max(16, W * 0.02);
-  const bezelPad = 12; // extra inset to clear CRT bezel frame
+  const baseFontSize = Math.max(6, H * 0.03);
+  const margin = Math.max(8, W * 0.02);
+  const bezelPad = Math.max(4, H * 0.015);
+  const topY = margin + bezelPad;
 
   c.save();
-  // Turn indicator (top center)
-  c.font = `${(baseFontSize * 2.025)|0}px 'VCR OSD Mono', monospace`;
+
+  // Turn indicator (top center) — 25% larger than tray labels
+  const trayLabelSize = Math.max(8, TRAY_PIECE_S * 0.8)|0;
+  const turnFontSize = (trayLabelSize * 1.25)|0;
+  const names = ["WHITE", "BLACK", "GOLD"];
+  c.font = `${turnFontSize}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "top";
-  c.fillStyle = isMyTurn ? COL.scarletBright : "#889";
-  c.globalAlpha = isMyTurn ? pulseA : 0.7;
-  c.fillText(isMyTurn ? "YOUR TURN" : "OPPONENT'S TURN", CX, margin + bezelPad);
-  c.globalAlpha = 1;
+  c.fillStyle = COL.scarletBright;
+  c.fillText(`${names[state.currentPlayer]} TO PLAY`, CX, topY);
 
-  // Round indicator (top left)
+  // Round indicator (top left — same row)
   c.font = `${(baseFontSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
-  c.textAlign = "left";
+  c.textAlign = "left"; c.textBaseline = "top";
   c.fillStyle = "#AAB";
-  c.fillText(`ROUND ${state.round}/2`, margin + bezelPad, margin + bezelPad);
+  c.fillText(`ROUND ${state.round}/${state.numPlayers}`, margin + bezelPad, topY);
 
-  // Scores (top right, stacked)
+  // Scores (top right, stacked — same row)
   c.font = `${(baseFontSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
-  c.textAlign = "right";
+  c.textAlign = "right"; c.textBaseline = "top";
+  const myIdx = Net.myIndex;
+  const hudNames = ["WHITE", "BLACK", "GOLD"].map((n, i) => i === myIdx ? "YOU" : n);
   c.fillStyle = COL.white;
-  c.fillText(`WHITE: ${state.scores[0]}`, W - margin - bezelPad, margin + bezelPad);
+  c.fillText(`${hudNames[0]}: ${state.scores[0]}`, W - margin - bezelPad, topY);
   c.fillStyle = "#999";
-  c.fillText(`BLACK: ${state.scores[1]}`, W - margin - bezelPad, margin + bezelPad + baseFontSize * 1.4);
+  c.fillText(`${hudNames[1]}: ${state.scores[1]}`, W - margin - bezelPad, topY + baseFontSize * 1.4);
+  if (state.numPlayers === 3) {
+    c.fillStyle = COL.goldPlayerLabel;
+    c.fillText(`${hudNames[2]}: ${state.scores[2]}`, W - margin - bezelPad, topY + baseFontSize * 2.8);
+  }
 
   // Room code
-  c.font = `${Math.max(10, baseFontSize * 0.65)|0}px 'VCR OSD Mono', monospace`;
+  c.font = `${Math.max(4, baseFontSize * 0.65)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "right";
   c.fillStyle = "#556";
-  c.fillText(`ROOM: ${Net.roomCode}`, W - margin - bezelPad, margin + bezelPad + baseFontSize * 3);
+  const roomCodeY = state.numPlayers === 3 ? topY + baseFontSize * 4.2 : topY + baseFontSize * 3;
+  c.fillText(`ROOM: ${Net.roomCode}`, W - margin - bezelPad, roomCodeY);
 
   // Restart and Home buttons
-  const btnW = Math.max(50, W * 0.06);
-  const btnH = Math.max(24, H * 0.045);
-  const btnY = H - margin - btnH - bezelPad;
-  const restartBtn = {x: W - margin * 2 - btnW * 2 - bezelPad, y: btnY, w: btnW, h: btnH};
-  const homeBtn = {x: W - margin - btnW - bezelPad, y: btnY, w: btnW, h: btnH};
+  const btnW = Math.max(20, W * 0.06);
+  const btnH = Math.max(12, H * 0.045);
+  const btnY = topY + baseFontSize * 1.6;
+  const restartBtn = {x: margin + bezelPad, y: btnY, w: btnW, h: btnH};
+  const homeBtn = {x: margin + bezelPad + btnW + 4, y: btnY, w: btnW, h: btnH};
 
   // Restart button
   roundRect(c, restartBtn.x, restartBtn.y, restartBtn.w, restartBtn.h, 4);
@@ -1299,8 +1469,8 @@ function drawConfirmDialog(ctx) {
   ctx.fillRect(0, 0, W, H);
 
   // Dialog box
-  const pw = Math.max(250, W * 0.33);
-  const ph = Math.max(150, H * 0.33);
+  const pw = Math.max(60, W * 0.33);
+  const ph = Math.max(50, H * 0.33);
   const px = CX - pw/2, py = CY - ph/2;
 
   roundRect(ctx, px, py, pw, ph, 12);
@@ -1311,15 +1481,15 @@ function drawConfirmDialog(ctx) {
   ctx.stroke();
 
   // Question
-  const questionSize = Math.max(18, H * 0.04);
+  const questionSize = Math.max(7, H * 0.04);
   ctx.font = `${(questionSize * 1.275)|0}px 'VCR OSD Mono', monospace`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#DDE";
   ctx.fillText("ARE YOU SURE?", CX, py + ph * 0.28);
 
   // Yes button (lighter, prominent)
-  const btnW = Math.max(50, W * 0.06);
-  const btnH = Math.max(32, H * 0.06);
+  const btnW = Math.max(20, W * 0.06);
+  const btnH = Math.max(12, H * 0.06);
   const btnY = py + ph * 0.56;
   const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
   roundRect(ctx, yesBtn.x, yesBtn.y, yesBtn.w, yesBtn.h, 8);
@@ -1328,7 +1498,7 @@ function drawConfirmDialog(ctx) {
   ctx.strokeStyle = state.hoverYes ? COL.accent : "#8890A0";
   ctx.lineWidth = 2;
   ctx.stroke();
-  const btnFontSize = Math.max(14, H * 0.033);
+  const btnFontSize = Math.max(5, H * 0.033);
   ctx.font = `${(btnFontSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#E0E4EC";
   ctx.fillText("YES", yesBtn.x + yesBtn.w/2, yesBtn.y + yesBtn.h/2 - 3);
@@ -1358,7 +1528,7 @@ function drawToasts(c, dt) {
     if (t.timer >= t.dur) { state.toasts.splice(i, 1); continue; }
     const alpha = t.timer < 200 ? t.timer/200 : (t.dur - t.timer) / (t.dur - 200);
     c.save(); c.globalAlpha = Math.max(0, alpha);
-    c.font = `${Math.max(12, S * 0.28)|0}px 'VCR OSD Mono', monospace`; c.textAlign = "center"; c.textBaseline = "middle";
+    c.font = `${Math.max(5, S * 0.28)|0}px 'VCR OSD Mono', monospace`; c.textAlign = "center"; c.textBaseline = "middle";
     c.fillStyle = COL.scarletBright; c.fillText(t.text, CX, H - 60);
     c.restore();
   }
@@ -1375,10 +1545,10 @@ function roundRect(c, x, y, w, h, r) {
 // ── Lobby Drawing ──────────────────────────────────────────────
 // Button rectangles for hit testing
 function getButtons() {
-  const bw = Math.max(200, W * 0.27);
-  const bh = Math.max(40, H * 0.09);
-  const spacing = Math.max(50, H * 0.12);
-  const titleSize = Math.max(52, Math.min(H * 0.22, 160));
+  const bw = Math.max(80, W * 0.27);
+  const bh = Math.max(16, H * 0.09);
+  const spacing = Math.max(20, H * 0.12);
+  const titleSize = Math.max(16, Math.min(H * 0.22, 160));
   const gapTitleBtns = H * 0.14;
   const contentH = titleSize / 2 + gapTitleBtns + spacing * 3.9 + bh * 0.6;
   const titleY = (H - contentH) / 2 + titleSize / 2;
@@ -1395,21 +1565,24 @@ function getButtons() {
     BTN_REGULAR: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_HIDDEN: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_BACK_MODE: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 },
+    BTN_2P: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    BTN_3P: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    BTN_BACK_COUNT: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 },
     BTN_STANDARD: { x: CX - bw * 0.54, y: H * 0.37, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_RANDOM: { x: CX - bw * 0.54, y: H * 0.56, w: bw * 1.08, h: bh * 1.6, r: 10 },
     BTN_BACK_MAP: { x: CX - bw * 0.3, y: H * 0.75, w: bw * 0.6, h: bh * 0.8, r: 8 },
     BTN_START_JOIN: (() => {
-      const inputH = 60;
+      const inputH = Math.max(50, H * 0.11);
       const inputCenterY = H / 2;
       const inputBottom = inputCenterY + inputH / 2;
-      const btnGap = 40;
+      const btnGap = Math.max(12, H * 0.074);
       return { x: CX - bw * 0.35, y: inputBottom + btnGap, w: bw * 0.31, h: bh * 0.8, r: 8 };
     })(),
     BTN_BACK_JOIN: (() => {
-      const inputH = 60;
+      const inputH = Math.max(50, H * 0.11);
       const inputCenterY = H / 2;
       const inputBottom = inputCenterY + inputH / 2;
-      const btnGap = 40;
+      const btnGap = Math.max(12, H * 0.074);
       return { x: CX + bw * 0.04, y: inputBottom + btnGap, w: bw * 0.31, h: bh * 0.8, r: 8 };
     })()
   };
@@ -1443,7 +1616,7 @@ function drawLobby(c, now) {
   c.fillStyle = COL.scarletBright;
   c.fillText("Scarlet Triangle", CX, titleY);
 
-  const btnFontSize = Math.max(16, H * 0.04);
+  const btnFontSize = Math.max(6, H * 0.04);
 
   if (state.phase === "lobby") {
     // Create Game button (dusty rose)
@@ -1527,18 +1700,18 @@ function drawLobby(c, now) {
       const contentArea = boxH - closeH;
       const titleY = boxY + (contentArea - contentH) / 2;
 
-      c.font = "48px 'VCR OSD Mono', monospace";
+      c.font = `${Math.max(12, H * 0.089)|0}px 'VCR OSD Mono', monospace`;
       c.textAlign = "center"; c.textBaseline = "middle";
       c.fillStyle = COL.scarletBright;
       c.fillText("HOW TO PLAY", CX, titleY);
 
-      c.font = "18px 'VCR OSD Mono', monospace";
+      c.font = `${Math.max(6, H * 0.033)|0}px 'VCR OSD Mono', monospace`;
       c.fillStyle = "#CCD";
       for (let i = 0; i < lines.length; i++) {
         c.fillText(lines[i], CX, titleY + titleGap + i * lineH);
       }
 
-      c.font = "13px 'VCR OSD Mono', monospace";
+      c.font = `${Math.max(5, H * 0.024)|0}px 'VCR OSD Mono', monospace`;
       c.fillStyle = "#667";
       c.fillText("Click anywhere to close", CX, boxY + boxH - 18);
     }
@@ -1548,19 +1721,23 @@ function drawLobby(c, now) {
     const titleBottom = titleY + titleSize / 2;
     const midY = titleBottom + (BTN_BACK.y - titleBottom) / 2;
 
-    c.font = "18px 'VCR OSD Mono', monospace";
+    const gap = H * 0.075;  // equal distance above & below room code
+
+    c.font = `${Math.max(6, H * 0.033)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = COL.white;
-    c.fillText("ROOM CODE:", CX, midY - 45);
+    c.fillText("ROOM CODE:", CX, midY - gap);
 
-    c.font = "48px 'VCR OSD Mono', monospace";
+    c.font = `${Math.max(12, H * 0.089)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = COL.scarletBright;
-    c.fillText(Net.roomCode, CX, midY + 5);
+    c.fillText(Net.roomCode, CX, midY);
 
+    const waitY = Math.min(midY + H * 0.085, BTN_BACK.y - H * 0.03);
     const blink = 0.5 + 0.5 * Math.sin(now / 500);
     c.globalAlpha = blink;
-    c.font = "16px 'VCR OSD Mono', monospace";
+    c.font = `${Math.max(6, H * 0.03)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#AAB";
-    c.fillText("WAITING FOR OPPONENT...", CX, midY + 55);
+    const waitText = state.numPlayers === 3 ? "WAITING FOR OPPONENTS..." : "WAITING FOR OPPONENT...";
+    c.fillText(waitText, CX, waitY);
     c.globalAlpha = 1;
 
     // Back button
@@ -1569,23 +1746,23 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverBack ? "#2A2024" : "#1E1618";
     c.fill();
     c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-    c.font = "21px 'VCR OSD Mono', monospace";
+    c.font = `${Math.max(7, H * 0.039)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#AAB";
     c.fillText("CANCEL", CX, bb.y + bb.h/2 - 3);
   }
   else if (state.phase === "joining") {
     // Center input at page center
-    const inputW = 240, inputH = 60;
+    const inputW = Math.max(180, W * 0.25), inputH = Math.max(50, H * 0.11);
     const inputCenterY = H / 2;
     const inputY = inputCenterY - inputH / 2;
     const inputX = CX - inputW / 2;
-    const btnGap = 40; // distance from input to buttons and label
+    const btnGap = Math.max(12, H * 0.074); // distance from input to buttons and label
 
     // Label at same distance above input as buttons are below
-    const labelCY = inputY - btnGap - 14;
+    const labelCY = inputY - btnGap - Math.max(5, H * 0.026);
 
     // Join input
-    c.font = "36px 'VCR OSD Mono', monospace";
+    c.font = `${Math.max(6, H * 0.04)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = COL.white;
     c.fillText("ENTER ROOM CODE:", CX, labelCY);
 
@@ -1594,7 +1771,8 @@ function drawLobby(c, now) {
     c.fillStyle = "#1A0E12"; c.fill();
     c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
 
-    c.font = "40px 'VCR OSD Mono', monospace";
+    const joinFontSize = Math.max(20, H * 0.055)|0;
+    c.font = `${joinFontSize}px 'VCR OSD Mono', monospace`;
     c.fillStyle = COL.white;
     c.fillText(state.joinCode, CX, inputY + inputH/2 - 5);
 
@@ -1602,7 +1780,7 @@ function drawLobby(c, now) {
     if (state.joinCode.length < 4) {
       const blink = Math.sin(now / 400) > 0 ? 1 : 0;
       if (blink) {
-        c.font = "40px 'VCR OSD Mono', monospace";
+        c.font = `${joinFontSize}px 'VCR OSD Mono', monospace`;
         const textW = c.measureText(state.joinCode).width;
         const cursorX = CX + textW / 2 + 4;
         c.fillStyle = COL.accent;
@@ -1612,9 +1790,9 @@ function drawLobby(c, now) {
 
     // Error
     if (state.lobbyError) {
-      c.font = "14px 'VCR OSD Mono', monospace";
+      c.font = `${Math.max(5, H * 0.026)|0}px 'VCR OSD Mono', monospace`;
       c.fillStyle = COL.denied;
-      c.fillText(state.lobbyError, CX, inputY + inputH + 18);
+      c.fillText(state.lobbyError, CX, inputY + inputH + Math.max(8, H * 0.033));
     }
 
     // Start button (enabled when code is 4 characters)
@@ -1626,7 +1804,7 @@ function drawLobby(c, now) {
     c.strokeStyle = canStart ? (state.hoverStartJoin ? COL.accent : "#667") : "#333";
     c.lineWidth = canStart ? 2 : 1;
     c.stroke();
-    c.font = "28px 'VCR OSD Mono', monospace";
+    c.font = `${Math.max(6, H * 0.037)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = canStart ? COL.accent : "#555";
     c.fillText("START", bStart.x + bStart.w/2, bStart.y + bStart.h/2 - 3);
 
@@ -1636,7 +1814,7 @@ function drawLobby(c, now) {
     c.fillStyle = state.hoverBackJoin ? "#2A2024" : "#1E1618";
     c.fill();
     c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-    c.font = "28px 'VCR OSD Mono', monospace";
+    c.font = `${Math.max(6, H * 0.037)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#AAB";
     c.fillText("BACK", bBack.x + bBack.w/2, bBack.y + bBack.h/2 - 3);
   }
@@ -1655,14 +1833,14 @@ function drawModeSelection(c) {
   c.fillRect(0, 0, W, H);
 
   // Title
-  const titleSize = Math.max(24, H * 0.067);
+  const titleSize = Math.max(8, H * 0.067);
   c.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.scarletBright;
   c.fillText("Select Game Mode", CX, H * 0.22);
 
-  const btnTitleSize = Math.max(18, H * 0.044);
-  const btnSubSize = Math.max(12, H * 0.026);
+  const btnTitleSize = Math.max(7, H * 0.044);
+  const btnSubSize = Math.max(5, H * 0.026);
 
   // Regular mode button (dusty rose)
   const br = BTN_REGULAR;
@@ -1696,7 +1874,7 @@ function drawModeSelection(c) {
   c.fillStyle = state.hoverBack ? "#2A2024" : "#1E1618";
   c.fill();
   c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-  c.font = "21px 'VCR OSD Mono', monospace";
+  c.font = `${Math.max(7, H * 0.039)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#AAB";
   c.fillText("BACK", CX, bb.y + bb.h/2 - 3);
 
@@ -1726,14 +1904,14 @@ function drawMapSelection(c) {
   c.restore();
 
   // Title — same style as mode selection
-  const titleSize = Math.max(24, H * 0.067);
+  const titleSize = Math.max(8, H * 0.067);
   c.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.scarletBright;
   c.fillText("Select Map", CX, H * 0.22);
 
-  const btnTitleSize = Math.max(18, H * 0.044);
-  const btnSubSize = Math.max(12, H * 0.026);
+  const btnTitleSize = Math.max(7, H * 0.044);
+  const btnSubSize = Math.max(5, H * 0.026);
 
   // Standard Map button (dusty rose)
   const bs = BTN_STANDARD;
@@ -1769,9 +1947,74 @@ function drawMapSelection(c) {
   c.fillStyle = state.hoverBackMap ? "#2A2024" : "#1E1618";
   c.fill();
   c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
-  c.font = "21px 'VCR OSD Mono', monospace";
+  c.font = `${Math.max(7, H * 0.039)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#AAB";
   c.fillText("BACK", CX, bb.y + bb.h/2 - 3);
+
+  c.restore();
+}
+
+function drawPlayerCountSelect(c) {
+  if (state.phase !== "playerCountSelect") return;
+  const {BTN_2P, BTN_3P, BTN_BACK_COUNT} = getButtons();
+
+  c.save();
+  c.fillStyle = "rgba(14,8,10,0.8)";
+  c.fillRect(0, 0, W, H);
+
+  // Starry specks
+  c.save();
+  for (const s of specks) {
+    c.beginPath();
+    c.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    c.shadowColor = `rgba(220,215,255,${s.a * 0.5})`;
+    c.shadowBlur = s.r * 4;
+    c.fillStyle = `rgba(230,225,240,${s.a * 0.8})`;
+    c.fill();
+  }
+  c.restore();
+
+  const titleSize = Math.max(8, H * 0.067);
+  c.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = COL.scarletBright;
+  c.fillText("How Many Players?", CX, H * 0.22);
+
+  const btnTitleSize = Math.max(7, H * 0.044);
+  const btnSubSize = Math.max(5, H * 0.026);
+
+  // 2 Players (dusty rose)
+  roundRect(c, BTN_2P.x, BTN_2P.y, BTN_2P.w, BTN_2P.h, BTN_2P.r);
+  c.fillStyle = state.hover2P ? "#2E2020" : "#241818";
+  c.fill();
+  c.strokeStyle = "#C47878"; c.lineWidth = 2; c.stroke();
+  c.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#C47878";
+  c.fillText("2 PLAYERS", CX, BTN_2P.y + BTN_2P.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#889";
+  c.fillText("CLASSIC DUEL", CX, BTN_2P.y + BTN_2P.h * 0.68);
+
+  // 3 Players (warm amber)
+  roundRect(c, BTN_3P.x, BTN_3P.y, BTN_3P.w, BTN_3P.h, BTN_3P.r);
+  c.fillStyle = state.hover3P ? "#2E261A" : "#221C12";
+  c.fill();
+  c.strokeStyle = "#C4A068"; c.lineWidth = 2; c.stroke();
+  c.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#C4A068";
+  c.fillText("3 PLAYERS", CX, BTN_3P.y + BTN_3P.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#889";
+  c.fillText("RANDOM MAP \u2022 3 ROUNDS", CX, BTN_3P.y + BTN_3P.h * 0.68);
+
+  // Back button
+  roundRect(c, BTN_BACK_COUNT.x, BTN_BACK_COUNT.y, BTN_BACK_COUNT.w, BTN_BACK_COUNT.h, BTN_BACK_COUNT.r);
+  c.fillStyle = state.hoverCountBack ? "#2A2024" : "#1E1618";
+  c.fill();
+  c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+  c.font = `${Math.max(7, H * 0.039)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#AAB";
+  c.fillText("BACK", CX, BTN_BACK_COUNT.y + BTN_BACK_COUNT.h / 2 - 3);
 
   c.restore();
 }
@@ -1786,8 +2029,8 @@ function drawRoundResult(c) {
 
   c.translate(CX, CY); c.scale(sc, sc); c.translate(-CX, -CY);
 
-  const pw = Math.max(280, W * 0.37);
-  const ph = Math.max(200, H * 0.44);
+  const pw = Math.max(60, W * 0.37);
+  const ph = Math.max(50, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
   c.fillStyle = "rgba(36,20,26,0.95)";
@@ -1796,8 +2039,8 @@ function drawRoundResult(c) {
   roundRect(c, px, py, pw, ph, 12);
   c.fill(); c.stroke();
 
-  const titleSize = Math.max(18, H * 0.04);
-  const scoreSize = Math.max(22, H * 0.055);
+  const titleSize = Math.max(7, H * 0.04);
+  const scoreSize = Math.max(8, H * 0.055);
 
   c.font = `${scoreSize}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "middle";
@@ -1806,24 +2049,35 @@ function drawRoundResult(c) {
 
   c.font = `${(scoreSize * 0.8)|0}px 'VCR OSD Mono', monospace`;
   const myIdx = Net.myIndex;
+  const rrNames = ["WHITE", "BLACK", "GOLD"].map((n, i) => i === myIdx ? "YOU" : n);
 
-  c.fillStyle = COL.white;
-  c.fillText(`WHITE: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize*3/8);
-  c.fillStyle = "#AAA";
-  c.fillText(`BLACK: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize*3/4);
+  if (state.numPlayers === 3) {
+    c.fillStyle = COL.white;
+    c.fillText(`${rrNames[0]}: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize);
+    c.fillStyle = "#AAA";
+    c.fillText(`${rrNames[1]}: ${state.roundScores[1]}`, CX, py + ph/2);
+    c.fillStyle = COL.goldPlayerLabel;
+    c.fillText(`${rrNames[2]}: ${state.roundScores[2]}`, CX, py + ph/2 + scoreSize);
+  } else {
+    c.fillStyle = COL.white;
+    c.fillText(`${rrNames[0]}: ${state.roundScores[0]}`, CX, py + ph/2 - scoreSize*3/8);
+    c.fillStyle = "#AAA";
+    c.fillText(`${rrNames[1]}: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize*3/4);
+  }
 
   if (state.phase === "waitingAdvance") {
-    const promptSize2 = Math.max(11, H * 0.02);
+    const promptSize2 = Math.max(5, H * 0.02);
     c.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#667";
-    c.fillText("WAITING FOR OPPONENT...", CX, py + ph - titleSize * 2);
+    const waitAdvText = state.numPlayers === 3 ? "WAITING FOR OPPONENTS..." : "WAITING FOR OPPONENT...";
+    c.fillText(waitAdvText, CX, py + ph - titleSize * 2);
   } else {
     const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
     c.globalAlpha = blink;
-    const promptSize2 = Math.max(11, H * 0.02);
+    const promptSize2 = Math.max(5, H * 0.02);
     c.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
     c.fillStyle = COL.accent;
-    const contText = state.round < 2 ? "SPACE / ENTER / CLICK: NEXT ROUND" : "SPACE / ENTER / CLICK: VIEW WINNER";
+    const contText = state.round < state.numPlayers ? "SPACE / ENTER / CLICK: NEXT ROUND" : "SPACE / ENTER / CLICK: VIEW WINNER";
     c.fillText(contText, CX, py + ph - titleSize * 2);
     c.globalAlpha = 1;
   }
@@ -1838,8 +2092,8 @@ function drawGameOver(c) {
   c.fillStyle = "rgba(14,8,10,0.7)";
   c.fillRect(0, 0, W, H);
 
-  const pw = Math.max(280, W * 0.37);
-  const ph = Math.max(200, H * 0.44);
+  const pw = Math.max(60, W * 0.37);
+  const ph = Math.max(50, H * 0.44);
   const px = CX - pw/2, py = CY - ph/2;
 
   c.fillStyle = "rgba(36,20,26,0.95)";
@@ -1855,23 +2109,33 @@ function drawGameOver(c) {
   else if (winner === myIdx) heading = "You Win!";
   else heading = "You Lose";
 
-  const titleSize = Math.max(18, H * 0.04);
-  const scoreSize = Math.max(22, H * 0.055);
+  const titleSize = Math.max(7, H * 0.04);
+  const scoreSize = Math.max(8, H * 0.055);
 
   c.font = `${(scoreSize * 1.25)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = winner === myIdx ? COL.scarletBright : (winner === -1 ? "#AAB" : COL.denied);
   c.fillText(heading.toUpperCase(), CX, py + titleSize * 2);
 
+  const goNames = ["WHITE", "BLACK", "GOLD"].map((n, i) => i === myIdx ? "YOU" : n);
   c.font = `${(scoreSize * 0.8)|0}px 'VCR OSD Mono', monospace`;
-  c.fillStyle = COL.white;
-  c.fillText(`WHITE: ${state.scores[0]}`, CX, py + ph/2 - scoreSize*3/8);
-  c.fillStyle = "#AAA";
-  c.fillText(`BLACK: ${state.scores[1]}`, CX, py + ph/2 + scoreSize*3/4);
+  if (state.numPlayers === 3) {
+    c.fillStyle = COL.white;
+    c.fillText(`${goNames[0]}: ${state.scores[0]}`, CX, py + ph/2 - scoreSize);
+    c.fillStyle = "#AAA";
+    c.fillText(`${goNames[1]}: ${state.scores[1]}`, CX, py + ph/2);
+    c.fillStyle = COL.goldPlayerLabel;
+    c.fillText(`${goNames[2]}: ${state.scores[2]}`, CX, py + ph/2 + scoreSize);
+  } else {
+    c.fillStyle = COL.white;
+    c.fillText(`${goNames[0]}: ${state.scores[0]}`, CX, py + ph/2 - scoreSize*3/8);
+    c.fillStyle = "#AAA";
+    c.fillText(`${goNames[1]}: ${state.scores[1]}`, CX, py + ph/2 + scoreSize*3/4);
+  }
 
   const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
   c.globalAlpha = blink;
-  const promptSize2 = Math.max(11, H * 0.02);
+  const promptSize2 = Math.max(5, H * 0.02);
   c.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
   c.fillStyle = COL.accent;
   c.fillText("SPACE / ENTER / CLICK: RETURN TO LOBBY", CX, py + ph - titleSize * 2);
@@ -1890,11 +2154,11 @@ function drawDisconnected(c, dt) {
   c.save();
   c.fillStyle = "rgba(14,8,10,0.8)";
   c.fillRect(0, 0, W, H);
-  c.font = "22px 'VCR OSD Mono', monospace";
+  c.font = `${Math.max(8, H * 0.041)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = COL.denied;
   c.fillText("OPPONENT DISCONNECTED", CX, CY - 20);
-  c.font = "14px 'VCR OSD Mono', monospace";
+  c.font = `${Math.max(5, H * 0.026)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#AAB";
   c.fillText("RETURNING TO LOBBY...", CX, CY + 20);
   c.restore();
@@ -1912,9 +2176,13 @@ function drawGoldFlash(c) {
 // ── Intensity ──────────────────────────────────────────────────
 function updateIntensity() {
   const tc = state.turnCount;
-  if (tc >= 18) { state.outlineBrighten=1; state.vignette=1; state.gframeGlow=1; }
-  else if (tc >= 15) { state.outlineBrighten=1; state.vignette=1; state.gframeGlow=0; }
-  else if (tc >= 10) { state.outlineBrighten=1; state.vignette=0; state.gframeGlow=0; }
+  const total = state.numPlayers * 10;
+  const t18 = Math.round(total * 0.9);
+  const t15 = Math.round(total * 0.75);
+  const t10 = Math.round(total * 0.5);
+  if (tc >= t18) { state.outlineBrighten=1; state.vignette=1; state.gframeGlow=1; }
+  else if (tc >= t15) { state.outlineBrighten=1; state.vignette=1; state.gframeGlow=0; }
+  else if (tc >= t10) { state.outlineBrighten=1; state.vignette=0; state.gframeGlow=0; }
 }
 
 // ── Float Labels ───────────────────────────────────────────────
@@ -1950,11 +2218,11 @@ function handleClick(canvasX, canvasY) {
 
   // Confirmation dialog
   if (state.phase === "confirm") {
-    const pw = Math.max(250, W * 0.33);
-    const ph = Math.max(150, H * 0.33);
+    const pw = Math.max(60, W * 0.33);
+    const ph = Math.max(50, H * 0.33);
     const px = CX - pw/2, py = CY - ph/2;
-    const btnW = Math.max(50, W * 0.06);
-    const btnH = Math.max(32, H * 0.06);
+    const btnW = Math.max(20, W * 0.06);
+    const btnH = Math.max(12, H * 0.06);
     const btnY = py + ph * 0.56;
     const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
     const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
@@ -1983,7 +2251,7 @@ function handleClick(canvasX, canvasY) {
     if (pointInRect(canvasX, canvasY, btns.BTN_CREATE)) {
       if (!Net.connected) return;
       playSFX("keyclick", 0.125);
-      state.phase = "modeSelection";
+      state.phase = "playerCountSelect";
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_JOIN)) {
@@ -2010,22 +2278,59 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
+  // Player Count Selection
+  if (state.phase === "playerCountSelect") {
+    if (pointInRect(canvasX, canvasY, btns.BTN_2P)) {
+      playSFX("keyclick", 0.125);
+      state.numPlayers = 2;
+      state.phase = "modeSelection";
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.BTN_3P)) {
+      playSFX("keyclick", 0.125);
+      state.numPlayers = 3;
+      state.mapType = "random";
+      state.scores = [0, 0, 0];
+      state.roundScores = [0, 0, 0];
+      state.phase = "modeSelection";
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, btns.BTN_BACK_COUNT)) {
+      state.phase = "lobby";
+      return;
+    }
+    return;
+  }
+
   // Mode Selection
   if (state.phase === "modeSelection") {
     if (pointInRect(canvasX, canvasY, btns.BTN_REGULAR)) {
       playSFX("keyclick", 0.125);
       state.gameMode = "regular";
-      state.phase = "mapSelection";
+      if (state.numPlayers === 3) {
+        // 3P always uses random map — skip map selection and create room
+        state.mapType = "random";
+        generateRandomMap(31);
+        Net.createRoom(state.gameMode, "random", randomMapData);
+      } else {
+        state.phase = "mapSelection";
+      }
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HIDDEN)) {
       playSFX("keyclick", 0.125);
       state.gameMode = "hidden";
-      state.phase = "mapSelection";
+      if (state.numPlayers === 3) {
+        state.mapType = "random";
+        generateRandomMap(31);
+        Net.createRoom(state.gameMode, "random", randomMapData);
+      } else {
+        state.phase = "mapSelection";
+      }
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_BACK_MODE)) {
-      state.phase = "lobby";
+      state.phase = "playerCountSelect";
       return;
     }
     return;
@@ -2100,13 +2405,15 @@ function handleClick(canvasX, canvasY) {
 
   // Playing - check for button clicks
   if (state.phase === "playing") {
-    const margin = Math.max(16, W * 0.02);
-    const bezelPad = 12;
-    const btnW = Math.max(50, W * 0.06);
-    const btnH = Math.max(24, H * 0.045);
-    const btnY = H - margin - btnH - bezelPad;
-    const restartBtn = {x: W - margin * 2 - btnW * 2 - bezelPad, y: btnY, w: btnW, h: btnH};
-    const homeBtn = {x: W - margin - btnW - bezelPad, y: btnY, w: btnW, h: btnH};
+    const margin = Math.max(8, W * 0.02);
+    const bezelPad = Math.max(4, H * 0.015);
+    const btnW = Math.max(20, W * 0.06);
+    const btnH = Math.max(12, H * 0.045);
+    const baseFontSize = Math.max(6, H * 0.03);
+    const topY = margin + bezelPad;
+    const btnY = topY + baseFontSize * 1.6;
+    const restartBtn = {x: margin + bezelPad, y: btnY, w: btnW, h: btnH};
+    const homeBtn = {x: margin + bezelPad + btnW + 4, y: btnY, w: btnW, h: btnH};
 
     if (pointInRect(canvasX, canvasY, restartBtn)) {
       playSFX("keyclick", 0.125);
@@ -2134,8 +2441,8 @@ function handleClick(canvasX, canvasY) {
   const adjY = CY + (canvasY - CY) / zoom;
 
   // Check tray clicks - only own tray when it's your turn
-  for (let owner = 0; owner < 2; owner++) {
-    const pieces = owner === 0 ? state.whitePieces : state.blackPieces;
+  for (let owner = 0; owner < state.numPlayers; owner++) {
+    const pieces = getPiecesForOwner(owner);
     const displayOrder = getTrayDisplayOrder(owner);
 
     for (let i = 0; i < 10; i++) {
@@ -2146,7 +2453,8 @@ function handleClick(canvasX, canvasY) {
       const pos = trayPiecePos(owner, i);
       const tpx = CX + (pos.x - CX), tpy = CY + (pos.y - CY);
 
-      if (pointInTriPadded(adjX, adjY, tpx, tpy, TRAY_PIECE_S, "down", 8)) {
+      const hitPieceS = owner === 2 ? TRAY_GOLD_PIECE_S : TRAY_PIECE_S;
+      if (pointInTriPadded(adjX, adjY, tpx, tpy, hitPieceS, "down", 8)) {
         if (owner !== myIdx) return; // Can't select opponent's pieces
         if (!isMyTurn) return; // Can't select when not your turn
 
@@ -2165,7 +2473,7 @@ function handleClick(canvasX, canvasY) {
   // Check board slot clicks
   if (!isMyTurn) return; // Can't place when not your turn
 
-  for (let i = 0; i < 21; i++) {
+  for (let i = 0; i < SLOTS.length; i++) {
     const slot = SLOTS[i];
     const sx = CX + slot.x, sy = CY + slot.y;
     let hit = pointInTri(adjX, adjY, triVerts(sx, sy, S, slot.ori));
@@ -2230,6 +2538,12 @@ function handleMouseMove(canvasX, canvasY) {
     state.hoverBackJoin = pointInRect(canvasX, canvasY, btns.BTN_BACK_JOIN);
     return;
   }
+  if (state.phase === "playerCountSelect") {
+    state.hover2P = pointInRect(canvasX, canvasY, btns.BTN_2P);
+    state.hover3P = pointInRect(canvasX, canvasY, btns.BTN_3P);
+    state.hoverCountBack = pointInRect(canvasX, canvasY, btns.BTN_BACK_COUNT);
+    return;
+  }
   if (state.phase === "modeSelection") {
     state.hoverRegular = pointInRect(canvasX, canvasY, btns.BTN_REGULAR);
     state.hoverHidden = pointInRect(canvasX, canvasY, btns.BTN_HIDDEN);
@@ -2245,11 +2559,11 @@ function handleMouseMove(canvasX, canvasY) {
 
   // Confirmation dialog hovers
   if (state.phase === "confirm") {
-    const pw = Math.max(250, W * 0.33);
-    const ph = Math.max(150, H * 0.33);
+    const pw = Math.max(60, W * 0.33);
+    const ph = Math.max(50, H * 0.33);
     const px = CX - pw/2, py = CY - ph/2;
-    const btnW = Math.max(50, W * 0.06);
-    const btnH = Math.max(32, H * 0.06);
+    const btnW = Math.max(20, W * 0.06);
+    const btnH = Math.max(12, H * 0.06);
     const btnY = py + ph * 0.56;
     const yesBtn = {x: CX - btnW - btnW * 0.15, y: btnY, w: btnW, h: btnH};
     const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
@@ -2263,13 +2577,15 @@ function handleMouseMove(canvasX, canvasY) {
   if (state.phase !== "playing") { hoveredSlot = -1; return; }
 
   // Playing - button hovers
-  const margin = Math.max(16, W * 0.02);
-  const bezelPad = 12;
-  const bw = Math.max(50, W * 0.06);
-  const bh = Math.max(24, H * 0.045);
-  const by = H - margin - bh - bezelPad;
-  const restartBtn = {x: W - margin * 2 - bw * 2 - bezelPad, y: by, w: bw, h: bh};
-  const homeBtn = {x: W - margin - bw - bezelPad, y: by, w: bw, h: bh};
+  const margin = Math.max(8, W * 0.02);
+  const bezelPad = Math.max(4, H * 0.015);
+  const bw = Math.max(20, W * 0.06);
+  const bh = Math.max(12, H * 0.045);
+  const baseFontSize = Math.max(6, H * 0.03);
+  const topY = margin + bezelPad;
+  const by = topY + baseFontSize * 1.6;
+  const restartBtn = {x: margin + bezelPad, y: by, w: bw, h: bh};
+  const homeBtn = {x: margin + bezelPad + bw + 4, y: by, w: bw, h: bh};
 
   state.hoverRestart = pointInRect(canvasX, canvasY, restartBtn);
   state.hoverHome = pointInRect(canvasX, canvasY, homeBtn);
@@ -2283,7 +2599,7 @@ function handleMouseMove(canvasX, canvasY) {
   const adjY = CY + (canvasY - CY) / zoom;
 
   let newHover = -1;
-  for (let i = 0; i < 21; i++) {
+  for (let i = 0; i < SLOTS.length; i++) {
     const slot = SLOTS[i];
     const sx = CX + slot.x, sy = CY + slot.y;
     if (pointInTriPadded(adjX, adjY, sx, sy, S, slot.ori, 6)) {
@@ -2370,6 +2686,12 @@ document.addEventListener("keydown", (e) => {
   if (key === "Escape") {
     if (state.phase === "waiting") {
       returnToLobby();
+    } else if (state.phase === "playerCountSelect") {
+      state.phase = "lobby";
+    } else if (state.phase === "modeSelection") {
+      state.phase = "playerCountSelect";
+    } else if (state.phase === "mapSelection") {
+      state.phase = "modeSelection";
     }
   }
 });
@@ -2386,13 +2708,9 @@ function drawSplash(c, now) {
   // Get title position
   const { titleY, titleSize } = getButtons();
 
-  // Dim background
-  c.fillStyle = "rgba(14,8,10,0.75)";
-  c.fillRect(0, 0, W, H);
-
   // Title — VCR font, all caps, scarlet
   c.save();
-  const splashTitleSize = Math.max(36, titleSize * 0.55);
+  const splashTitleSize = Math.max(10, titleSize * 0.55);
   c.font = `${splashTitleSize|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center";
   c.textBaseline = "middle";
@@ -2402,7 +2720,7 @@ function drawSplash(c, now) {
   // "CLICK TO ENTER" raised up — 1/3 of the way down from title bottom to screen bottom
   const titleBottom = titleY + titleSize / 2;
   const textY = titleBottom + (H - titleBottom) * 0.33;
-  const fontSize = Math.max(24, H * 0.065);
+  const fontSize = Math.max(8, H * 0.065);
   c.font = `${fontSize|0}px 'VCR OSD Mono', monospace`;
   // Pulsing alpha
   const pulse = 0.5 + 0.5 * Math.sin(now / 400);
@@ -2503,6 +2821,7 @@ function frame(now) {
   drawLobby(ctx, now);
   drawModeSelection(ctx);
   drawMapSelection(ctx);
+  drawPlayerCountSelect(ctx);
 
   // Splash & boot overlays (drawn on top of everything)
   drawSplash(ctx, now);
@@ -2687,7 +3006,7 @@ requestAnimationFrame(frame);
   setInterval(() => {
     const phase = typeof state !== 'undefined' ? state.phase : '';
     const onTitle = phase === 'lobby';
-    const onSubmenu = phase === 'modeSelection' || phase === 'mapSelection';
+    const onSubmenu = phase === 'playerCountSelect' || phase === 'modeSelection' || phase === 'mapSelection';
     flickerEl.classList.toggle('active', onTitle);
     flickerEl.classList.toggle('submenu', onSubmenu);
     crtOverlay.classList.toggle('submenu', onSubmenu);
