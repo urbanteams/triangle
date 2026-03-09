@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-03-08 — Join Game Layout Rework
+
+### Changed: Join Room Code Screen (`index.html`)
+- Input field centered vertically at page center (`H/2`)
+- "ENTER ROOM CODE:" label and Start/Back buttons spaced 40px from input (doubled from 20px)
+- Label and buttons equidistant from input field
+- Text inside input field raised (`-5` offset) for proper vertical centering within the box
+- Cursor blink position adjusted to match
+- Button hit-test rects in `getButtons()` updated to match new layout
+
+## 2026-03-07 — CRT Television Effect & VCR Font Overhaul
+
+### Added: CRT Television Overlay
+- Fixed overlay div (`z-index: 9999`, `pointer-events: none`) with layered visual effects on both HTML files
+- Scanlines: 4px repeating horizontal gradient
+- Vignette: radial gradient darkening corners/edges to simulate curved CRT screen
+- Chromatic aberration: subtle RGB channel separation via inset box-shadows
+- Phosphor glow: faint green tint with screen blend mode
+- CRT bezel frame: layered inset box-shadows simulating a dark plastic TV housing
+- Flicker + static noise: **title screen only** — JS polls game phase to toggle effects
+
+### Added: VCR OSD Mono Font
+- Replaced system sans-serif (tile numbers) and most Merriweather UI text with VCR OSD Mono from CDNFonts
+- All VCR OSD Mono text rendered in ALL CAPS except button subheadings
+- Allura retained for: title logo, menu headings, player name labels above trays
+- Merriweather retained for: How to Play popup body text
+- Turn indicator ("WHITE TO PLACE" / "YOUR TURN") changed from Allura to VCR OSD Mono, still scarlet red with pulsating opacity
+- Button text y-offset adjusted from `+2` to `-1` for proper vertical centering
+
+### Changed: Background Stars
+- Increased speck radius (0.8–3.0), opacity (0.25–0.75), and added shadowBlur glow
+- Color shifted from warm gray to cool white with blue-white halo
+
+### Changed: UI Element Positioning
+- All HUD elements inset by 12px (`bezelPad`) from edges to clear the CRT bezel frame
+- Player trays shifted 12px toward center in wide layout
+- "Select Map" heading color changed from scarlet red to silver (`COL.accent`)
+- "Scarlet Triangle" title text made bold
+
+### Fixed: Local Development Server
+- `server.js` now serves static files at `/triangle/` path to match `<base href="/triangle/">` tag
+- Root `/` redirects to `/triangle/index.html`
+- Navigation between `index.html` and `golden-triangle.html` works correctly on localhost
+
 ## 2026-02-25 — Map Type Selection & Random Maps (Hot Seat)
 
 ### Added: Pre-Game Map Selection

@@ -139,11 +139,21 @@ This creates four possible game types: Regular/Standard, Regular/Random, Hidden/
 
 | Context | Font | Source |
 |---------|------|--------|
-| Title text (e.g. "Scarlet Triangle") | Allura (cursive) | Google Fonts |
-| General UI text (menus, labels, scores, prompts) | Merriweather (serif), bold & regular weights | Google Fonts |
-| Numbers on triangle tiles | System sans-serif | Built-in |
+| Title text ("Scarlet Triangle"), menu headings (Select Game Mode, Select Map, Round Results, Game Over) | Allura (cursive) | Google Fonts |
+| Player name labels above trays ("You" / "Opponent") | Allura (cursive) | Google Fonts |
+| How to Play popup body text | Merriweather (serif) | Google Fonts |
+| All other UI text: buttons, HUD, scores, prompts, turn indicator, room codes, dialogs | VCR OSD Mono (monospace), ALL CAPS | CDNFonts |
+| Numbers on triangle tiles | VCR OSD Mono (monospace) | CDNFonts |
 
-Both files load fonts via: `fonts.googleapis.com/css2?family=Allura&family=Merriweather:wght@400;700&display=block`
+Font imports:
+- Google Fonts: `fonts.googleapis.com/css2?family=Allura&family=Merriweather:wght@400;700&display=block`
+- CDNFonts: `fonts.cdnfonts.com/css/vcr-osd-mono`
+
+### VCR OSD Mono Usage Notes
+- All VCR OSD Mono text is rendered in **ALL CAPS** except button subheadings (e.g. "Standard game rules", "A Silly Goose")
+- Font sizes are scaled to ~85% of what Merriweather used (VCR OSD Mono renders slightly larger)
+- Button text uses a `- 1` y-offset (instead of `+ 2`) for proper vertical centering with this font
+- The turn indicator ("WHITE TO PLACE" / "YOUR TURN") uses VCR OSD Mono in scarlet red with pulsating opacity
 
 ## Tile Overlap Fix
 
@@ -152,6 +162,42 @@ Placed triangles were visually overlapping neighboring slots, especially on smal
 1. **Clipping path in `drawBevelTri`**: A `ctx.clip()` call now confines all drawing (fill + bevel strokes) to the triangle boundary, preventing bevel strokes from bleeding into adjacent slots. Bevel line widths were doubled (2.5→5 highlight, 2→4 shadow) to compensate for the clip cutting the outer half of strokes.
 
 2. **Reduced piece size ratio** (`PIECE_S`): Changed from `S * 0.94` to `S * 0.88`. The previous 6% reduction left sub-pixel gaps on small screens. The new 12% reduction creates a visible border between pieces and slot outlines at all screen sizes.
+
+## CRT Television Effect
+
+A CRT television visual overlay is applied to both HTML files via a fixed `div.crt-overlay` element (`position: fixed; inset: 0; pointer-events: none; z-index: 9999`). The overlay is purely cosmetic and does not interfere with gameplay interactions.
+
+### Overlay Layers
+
+| Layer | Class/Element | z-index | Effect |
+|-------|---------------|---------|--------|
+| Chromatic aberration | `.crt-aberration` | 0 | Subtle RGB channel offset via inner box-shadows (red/cyan horizontal, blue/yellow vertical) |
+| Scanlines | `.crt-overlay::before` | 1 | 4px repeating horizontal gradient (2px transparent, 2px `rgba(0,0,0,0.12)`) |
+| Vignette | `.crt-overlay::after` | 2 | Radial gradient darkening corners/edges to simulate screen curvature |
+| Phosphor glow | `.crt-phosphor` | 3 | `rgba(40,255,60,0.03)` with `mix-blend-mode: screen` for subtle green tint |
+| Flicker | `.crt-flicker` | 4 | CSS keyframe animation (4s cycle), **title screen only** — toggled via `.active` class |
+| Static noise | `canvas.crt-noise` | 5 | Low-res (1/4 resolution) random grayscale pixels, flashes for 80–150ms every 2–6s, **title screen only** |
+| CRT bezel frame | `.crt-frame` | 6 | Layered inset box-shadows simulating a thick dark plastic TV bezel with beveled edges and rounded corners |
+
+### Title-Screen-Only Effects
+Flicker and static noise are only active on the title screen. A 200ms `setInterval` polls the game phase:
+- `index.html`: active when `state.phase === 'lobby'`
+- `golden-triangle.html`: active when `state.phase === 'menu'` or `'menuTransition'`
+
+### CRT Bezel Inset Padding
+All HUD elements are offset by `bezelPad = 12px` inward from each edge to avoid being occluded by the CRT bezel frame:
+- Round indicator (top left): `margin + 12` from left and top
+- Turn indicator (top center): `margin + 12` from top
+- Scores (top right): `margin + 12` from right and top
+- Restart/Home buttons (bottom right): `margin + 12` from right and bottom
+- Player trays (left/right edges): shifted 12px toward center in wide layout
+
+### Background Stars
+Background specks were enhanced to look like stars:
+- Radius: `0.8–3.0` (up from `0.5–2.0`)
+- Opacity: `0.25–0.75` (up from `0.1–0.4`)
+- Color: `rgba(230,225,240,a)` (cool white, up from warm gray)
+- Glow: `shadowBlur` at `radius * 4` with `rgba(220,215,255,a)` halo
 
 ## What Was NOT Changed
 

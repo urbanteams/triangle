@@ -16,8 +16,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static files from parent directory (for local development)
-app.use(express.static(path.join(__dirname, "..")));
+// Serve static files from parent directory under /triangle/ path
+// so <base href="/triangle/"> works locally the same as in production
+const parentDir = path.join(__dirname, "..");
+app.use("/triangle", express.static(parentDir));
+// Redirect root to /triangle/ for convenience
+app.get("/", (req, res) => res.redirect("/triangle/index.html"));
 
 // Health check endpoint for Railway
 app.get("/health", (req, res) => {

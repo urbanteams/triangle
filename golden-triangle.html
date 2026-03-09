@@ -1114,40 +1114,40 @@ function drawDifficultySelect(ctx) {
   const btnTitleSize = Math.max(18, H * 0.044);
   const btnSubSize = Math.max(12, H * 0.026);
 
-  // Easy
+  // Easy (muted teal, matches VS CPU)
   roundRect(ctx, btns.easy.x, btns.easy.y, btns.easy.w, btns.easy.h, btns.easy.r);
-  ctx.fillStyle = state.hoverEasy ? "#2A2A30" : "#1E1E24";
+  ctx.fillStyle = state.hoverEasy ? "#1E2A2A" : "#141E1E";
   ctx.fill();
-  ctx.strokeStyle = COL.accent;
+  ctx.strokeStyle = "#7AAA9E";
   ctx.lineWidth = 2; ctx.stroke();
   ctx.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  ctx.fillStyle = COL.accent;
+  ctx.fillStyle = "#7AAA9E";
   ctx.fillText("EASY", CX, btns.easy.y + btns.easy.h * 0.35);
   ctx.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#889";
   ctx.fillText("A SILLY GOOSE", CX, btns.easy.y + btns.easy.h * 0.68);
 
-  // Medium
+  // Medium (warm amber, matches Hot Seat)
   roundRect(ctx, btns.medium.x, btns.medium.y, btns.medium.w, btns.medium.h, btns.medium.r);
-  ctx.fillStyle = state.hoverMedium ? "#2A2018" : "#1E1810";
+  ctx.fillStyle = state.hoverMedium ? "#2E261A" : "#221C12";
   ctx.fill();
-  ctx.strokeStyle = state.hoverMedium ? COL.goldBase : "#8A6A22";
+  ctx.strokeStyle = "#C4A068";
   ctx.lineWidth = 2; ctx.stroke();
   ctx.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  ctx.fillStyle = COL.goldBase;
+  ctx.fillStyle = "#C4A068";
   ctx.fillText("MEDIUM", CX, btns.medium.y + btns.medium.h * 0.35);
   ctx.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#889";
   ctx.fillText("A STEPPING STONE", CX, btns.medium.y + btns.medium.h * 0.68);
 
-  // Hard
+  // Hard (dusty rose, matches Create Game)
   roundRect(ctx, btns.hard.x, btns.hard.y, btns.hard.w, btns.hard.h, btns.hard.r);
-  ctx.fillStyle = state.hoverHard ? "#2A1820" : "#1E1018";
+  ctx.fillStyle = state.hoverHard ? "#2E2020" : "#241818";
   ctx.fill();
-  ctx.strokeStyle = state.hoverHard ? COL.scarletBright : "#8B0A1E";
+  ctx.strokeStyle = "#C47878";
   ctx.lineWidth = 2; ctx.stroke();
   ctx.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  ctx.fillStyle = COL.scarletBright;
+  ctx.fillStyle = "#C47878";
   ctx.fillText("HARD", CX, btns.hard.y + btns.hard.h * 0.35);
   ctx.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#889";
@@ -1196,27 +1196,27 @@ function drawMapSelect(ctx) {
   const btnTitleSize = Math.max(18, H * 0.044);
   const btnSubSize = Math.max(12, H * 0.026);
 
-  // Standard Map button (brown, like Create Game)
+  // Standard Map button (dusty rose)
   roundRect(ctx, btns.btn1.x, btns.btn1.y, btns.btn1.w, btns.btn1.h, btns.btn1.r);
-  ctx.fillStyle = state.hoverStandard ? "#3A2018" : "#2A1810";
+  ctx.fillStyle = state.hoverStandard ? "#2E2020" : "#241818";
   ctx.fill();
-  ctx.strokeStyle = "#C8956E";
+  ctx.strokeStyle = "#C47878";
   ctx.lineWidth = 2; ctx.stroke();
-  ctx.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  ctx.fillStyle = "#B08060";
+  ctx.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#C47878";
   ctx.fillText("STANDARD MAP", CX, btns.btn1.y + btns.btn1.h * 0.35);
   ctx.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#889";
   ctx.fillText("CLASSIC TRIANGLE LAYOUT", CX, btns.btn1.y + btns.btn1.h * 0.68);
 
-  // Random Map button (gold, like VS CPU)
+  // Random Map button (muted teal)
   roundRect(ctx, btns.btn2.x, btns.btn2.y, btns.btn2.w, btns.btn2.h, btns.btn2.r);
-  ctx.fillStyle = state.hoverRandom ? "#2A2018" : "#1E1810";
+  ctx.fillStyle = state.hoverRandom ? "#1E2A2A" : "#141E1E";
   ctx.fill();
-  ctx.strokeStyle = COL.goldBase;
+  ctx.strokeStyle = "#7AAA9E";
   ctx.lineWidth = 2; ctx.stroke();
-  ctx.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  ctx.fillStyle = COL.goldBase;
+  ctx.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#7AAA9E";
   ctx.fillText("RANDOM MAP", CX, btns.btn2.y + btns.btn2.h * 0.35);
   ctx.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#889";
@@ -1731,6 +1731,7 @@ function handleClick(canvasX, canvasY) {
     if (pointInRect(canvasX, canvasY, yesBtn)) {
       // Execute the confirmed action
       if (state.confirmAction === "restart") {
+        playSFX("keyclick", 0.125);
         state = freshState();
         if (CPU_MODE) state.phase = "difficultySelect";
         tweens = [];
@@ -1740,7 +1741,8 @@ function handleClick(canvasX, canvasY) {
         cpuSelectedMove = null;
         resize();
       } else if (state.confirmAction === "home") {
-        window.location.href = "index.html";
+        playSFX("keyclick", 0.125);
+        setTimeout(() => { window.location.href = "index.html"; }, 150);
       }
       return;
     }

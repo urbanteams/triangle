@@ -21,7 +21,19 @@
       "Bash(git push:*)",
       "Bash(python -m http.server:*)",
       "Bash(PORT=8000 npm start:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:triangle-teal.vercel.app)",
+      "WebFetch(domain:scarletagames.com)",
+      "Bash(curl:*)",
+      "Bash(vercel:*)",
+      "Bash(python3:*)",
+      "Bash(npx:*)",
+      "WebSearch",
+      "WebFetch(domain:fonts.cdnfonts.com)",
+      "Bash(mkdir:*)",
+      "Skill(claude-api)",
+      "Bash(git:*)"
     ]
   }
 }

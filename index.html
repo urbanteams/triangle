@@ -1412,44 +1412,44 @@ function drawLobby(c, now) {
   const btnFontSize = Math.max(16, H * 0.04);
 
   if (state.phase === "lobby") {
-    // Create Game button (bronze)
+    // Create Game button (dusty rose)
     const bc = BTN_CREATE;
     roundRect(c, bc.x, bc.y, bc.w, bc.h, bc.r);
-    c.fillStyle = state.hoverCreate ? "#3A2018" : "#2A1810";
+    c.fillStyle = state.hoverCreate ? "#2E2020" : "#241818";
     c.fill();
-    c.strokeStyle = "#C8956E"; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
-    c.fillStyle = "#B08060";
+    c.strokeStyle = "#C47878"; c.lineWidth = 2; c.stroke();
+    c.font = `${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
+    c.fillStyle = "#C47878";
     c.fillText("CREATE GAME", CX, bc.y + bc.h/2 - 3);
 
-    // Join Game button
+    // Join Game button (soft lavender)
     const bj = BTN_JOIN;
     roundRect(c, bj.x, bj.y, bj.w, bj.h, bj.r);
-    c.fillStyle = state.hoverJoin ? "#2A2A30" : "#1E1E24";
+    c.fillStyle = state.hoverJoin ? "#28242E" : "#1E1A24";
     c.fill();
-    c.strokeStyle = COL.accent; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
-    c.fillStyle = COL.accent;
+    c.strokeStyle = "#A898C0"; c.lineWidth = 2; c.stroke();
+    c.font = `${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
+    c.fillStyle = "#A898C0";
     c.fillText("JOIN GAME", CX, bj.y + bj.h/2 - 3);
 
-    // vs CPU button (gold)
+    // vs CPU button (muted teal)
     const bcpu = BTN_CPU;
     roundRect(c, bcpu.x, bcpu.y, bcpu.w, bcpu.h, bcpu.r);
-    c.fillStyle = state.hoverCPU ? "#2A2018" : "#1E1810";
+    c.fillStyle = state.hoverCPU ? "#1E2A2A" : "#141E1E";
     c.fill();
-    c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
-    c.fillStyle = COL.goldBase;
+    c.strokeStyle = "#7AAA9E"; c.lineWidth = 2; c.stroke();
+    c.font = `${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
+    c.fillStyle = "#7AAA9E";
     c.fillText("VS CPU", CX, bcpu.y + bcpu.h/2 - 3);
 
-    // Hot Seat button (scarlet)
+    // Hot Seat button (warm amber)
     const bh = BTN_HOTSEAT;
     roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
-    c.fillStyle = state.hoverHotSeat ? "#2A1820" : "#1E1018";
+    c.fillStyle = state.hoverHotSeat ? "#2E261A" : "#221C12";
     c.fill();
-    c.strokeStyle = COL.scarletBright; c.lineWidth = 2; c.stroke();
-    c.font = `bold ${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
-    c.fillStyle = COL.scarletBright;
+    c.strokeStyle = "#C4A068"; c.lineWidth = 2; c.stroke();
+    c.font = `${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
+    c.fillStyle = "#C4A068";
     c.fillText("HOT SEAT", CX, bh.y + bh.h/2 - 3);
 
     // Error
@@ -1630,27 +1630,27 @@ function drawModeSelection(c) {
   const btnTitleSize = Math.max(18, H * 0.044);
   const btnSubSize = Math.max(12, H * 0.026);
 
-  // Regular mode button (brown, like Create Game)
+  // Regular mode button (dusty rose)
   const br = BTN_REGULAR;
   roundRect(c, br.x, br.y, br.w, br.h, br.r);
-  c.fillStyle = state.hoverRegular ? "#3A2018" : "#2A1810";
+  c.fillStyle = state.hoverRegular ? "#2E2020" : "#241818";
   c.fill();
-  c.strokeStyle = "#C8956E"; c.lineWidth = 2; c.stroke();
-  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  c.fillStyle = "#B08060";
+  c.strokeStyle = "#C47878"; c.lineWidth = 2; c.stroke();
+  c.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#C47878";
   c.fillText("REGULAR", CX, br.y + br.h * 0.35);
   c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#AAB";
   c.fillText("STANDARD GAME RULES", CX, br.y + br.h * 0.68);
 
-  // Hidden mode button (gold, like VS CPU)
+  // Hidden mode button (muted teal)
   const bh = BTN_HIDDEN;
   roundRect(c, bh.x, bh.y, bh.w, bh.h, bh.r);
-  c.fillStyle = state.hoverHidden ? "#2A2018" : "#1E1810";
+  c.fillStyle = state.hoverHidden ? "#1E2A2A" : "#141E1E";
   c.fill();
-  c.strokeStyle = COL.goldBase; c.lineWidth = 2; c.stroke();
-  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  c.fillStyle = COL.goldBase;
+  c.strokeStyle = "#7AAA9E"; c.lineWidth = 2; c.stroke();
+  c.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#7AAA9E";
   c.fillText("HIDDEN", CX, bh.y + bh.h * 0.35);
   c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#AAB";
@@ -1701,29 +1701,29 @@ function drawMapSelection(c) {
   const btnTitleSize = Math.max(18, H * 0.044);
   const btnSubSize = Math.max(12, H * 0.026);
 
-  // Standard Map button (brown, like Create Game)
+  // Standard Map button (dusty rose)
   const bs = BTN_STANDARD;
   roundRect(c, bs.x, bs.y, bs.w, bs.h, bs.r);
-  c.fillStyle = state.hoverStandard ? "#3A2018" : "#2A1810";
+  c.fillStyle = state.hoverStandard ? "#2E2020" : "#241818";
   c.fill();
-  c.strokeStyle = "#C8956E";
+  c.strokeStyle = "#C47878";
   c.lineWidth = 2; c.stroke();
-  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  c.fillStyle = "#B08060";
+  c.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#C47878";
   c.fillText("STANDARD MAP", CX, bs.y + bs.h * 0.35);
   c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#889";
   c.fillText("CLASSIC TRIANGLE LAYOUT", CX, bs.y + bs.h * 0.68);
 
-  // Random Map button (gold, like VS CPU)
+  // Random Map button (muted teal)
   const br = BTN_RANDOM;
   roundRect(c, br.x, br.y, br.w, br.h, br.r);
-  c.fillStyle = state.hoverRandom ? "#2A2018" : "#1E1810";
+  c.fillStyle = state.hoverRandom ? "#1E2A2A" : "#141E1E";
   c.fill();
-  c.strokeStyle = COL.goldBase;
+  c.strokeStyle = "#7AAA9E";
   c.lineWidth = 2; c.stroke();
-  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
-  c.fillStyle = COL.goldBase;
+  c.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#7AAA9E";
   c.fillText("RANDOM MAP", CX, br.y + br.h * 0.35);
   c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.fillStyle = "#889";
@@ -1916,6 +1916,7 @@ function handleClick(canvasX, canvasY) {
     const noBtn = {x: CX + btnW * 0.15, y: btnY, w: btnW, h: btnH};
 
     if (pointInRect(canvasX, canvasY, yesBtn)) {
+      playSFX("keyclick", 0.125);
       returnToLobby();
       return;
     }
