@@ -1711,7 +1711,7 @@ function handleClick(canvasX, canvasY) {
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.back)) {
-      window.location.href = "index.html";
+      sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
       return;
     }
     return;
@@ -1742,7 +1742,7 @@ function handleClick(canvasX, canvasY) {
         resize();
       } else if (state.confirmAction === "home") {
         playSFX("keyclick", 0.125);
-        setTimeout(() => { window.location.href = "index.html"; }, 150);
+        setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html"; }, 150);
       }
       return;
     }
@@ -1775,7 +1775,7 @@ function handleClick(canvasX, canvasY) {
       if (CPU_MODE) {
         state.phase = "difficultySelect";
       } else {
-        window.location.href = "index.html";
+        sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
       }
       return;
     }
@@ -1795,7 +1795,7 @@ function handleClick(canvasX, canvasY) {
 
   // Game over - return to main page
   if (state.phase === "gameOver") {
-    window.location.href = "index.html";
+    sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
     return;
   }
 
@@ -2047,19 +2047,19 @@ document.addEventListener("keydown", (e) => {
     if (state.phase === "roundResult") {
       advanceFromRoundResult();
     } else if (state.phase === "gameOver") {
-      window.location.href = "index.html";
+      sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
     }
   }
 
   // Escape to go back
   if (key === "Escape") {
     if (state.phase === "difficultySelect") {
-      window.location.href = "index.html";
+      sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
     } else if (state.phase === "mapSelect") {
       if (CPU_MODE) {
         state.phase = "difficultySelect";
       } else {
-        window.location.href = "index.html";
+        sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
       }
     }
   }
