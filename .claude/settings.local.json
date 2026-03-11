@@ -33,7 +33,9 @@
       "WebFetch(domain:fonts.cdnfonts.com)",
       "Bash(mkdir:*)",
       "Skill(claude-api)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(gh pr:*)",
+      "Bash(\"/c/Program:*)"
     ]
   }
 }

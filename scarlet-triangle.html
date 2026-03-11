@@ -2467,6 +2467,12 @@ function cpuMoveMedium() {
       // Mild preference for high-adjacency slots (more connected = more impactful)
       score += adj.length * 0.5;
 
+      // ── 4b. BLOCKING WASTE PENALTY (mild) ──
+      // Slight preference for using lower-value pieces in fully surrounded slots
+      if (emptyNeighbors === 0 && piece.value >= 5) {
+        score -= piece.value * 0.6;
+      }
+
       // ── 5. NOISE ──
       score += Math.random() * 1.5;
 
@@ -2593,6 +2599,17 @@ function evaluateHardMove(piece, slotId, allPieces, allSlots) {
   // Late game: use high-value pieces where they'll score
   if (gameProgress > 0.65 && piece.value >= 7) {
     score += piece.value * emptyNeighbors * 0.3;
+  }
+
+  // ── 4b. BLOCKING WASTE PENALTY ──
+  // If this slot has no empty neighbors, the placed piece can never score
+  // (no adjacent slot can become golden). Penalize high-value pieces here
+  // since a low-value piece blocks just as effectively.
+  if (emptyNeighbors === 0 && piece.value >= 3) {
+    score -= piece.value * 1.8;
+  } else if (emptyNeighbors === 1 && piece.value >= 5) {
+    // Only one chance to score — still prefer lower pieces for marginal spots
+    score -= piece.value * 0.5;
   }
 
   // ── 5. EDGE PENALTY ──

@@ -60,7 +60,7 @@ Audio uses both synthesized sounds (Web Audio API) and external mp3 files loaded
 ## Online Multiplayer Implementation
 
 ### Two Versions
-- **`golden-triangle.html`**: Hot seat mode (local multiplayer, no network)
+- **`scarlet-triangle.html`**: Hot seat mode (local multiplayer, no network)
 - **`index.html`**: Online multiplayer using Firebase Realtime Database
 
 ### Firebase Architecture

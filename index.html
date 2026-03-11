@@ -1556,9 +1556,9 @@ function getButtons() {
   return {
     titleY,
     titleSize,
-    BTN_CREATE: { x: CX - bw/2, y: by, w: bw, h: bh, r: 10 },
-    BTN_JOIN: { x: CX - bw/2, y: by + spacing, w: bw, h: bh, r: 10 },
-    BTN_CPU: { x: CX - bw/2, y: by + spacing * 2, w: bw, h: bh, r: 10 },
+    BTN_CPU: { x: CX - bw/2, y: by, w: bw, h: bh, r: 10 },
+    BTN_CREATE: { x: CX - bw/2, y: by + spacing, w: bw, h: bh, r: 10 },
+    BTN_JOIN: { x: CX - bw/2, y: by + spacing * 2, w: bw, h: bh, r: 10 },
     BTN_HOTSEAT: { x: CX - bw/2, y: by + spacing * 3, w: bw, h: bh, r: 10 },
     BTN_BACK: { x: CX - bw * 0.3, y: by + spacing * 2, w: bw * 0.6, h: bh * 0.8, r: 8 },
     BTN_HOWTO: { x: CX - bw * 0.3, y: by + spacing * 3.9, w: bw * 0.6, h: bh * 0.6, r: 6 },
@@ -1619,35 +1619,35 @@ function drawLobby(c, now) {
   const btnFontSize = Math.max(6, H * 0.04);
 
   if (state.phase === "lobby") {
-    // Create Game button (dusty rose)
-    const bc = BTN_CREATE;
-    roundRect(c, bc.x, bc.y, bc.w, bc.h, bc.r);
-    c.fillStyle = state.hoverCreate ? "#2E2020" : "#241818";
+    // vs CPU button (dusty rose)
+    const bcpu = BTN_CPU;
+    roundRect(c, bcpu.x, bcpu.y, bcpu.w, bcpu.h, bcpu.r);
+    c.fillStyle = state.hoverCPU ? "#2E2020" : "#241818";
     c.fill();
     c.strokeStyle = "#C47878"; c.lineWidth = 2; c.stroke();
     c.font = `${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#C47878";
-    c.fillText("CREATE GAME", CX, bc.y + bc.h/2 - 3);
+    c.fillText("VS CPU", CX, bcpu.y + bcpu.h/2 - 3);
 
-    // Join Game button (soft lavender)
-    const bj = BTN_JOIN;
-    roundRect(c, bj.x, bj.y, bj.w, bj.h, bj.r);
-    c.fillStyle = state.hoverJoin ? "#28242E" : "#1E1A24";
+    // Create Game button (soft lavender)
+    const bc = BTN_CREATE;
+    roundRect(c, bc.x, bc.y, bc.w, bc.h, bc.r);
+    c.fillStyle = state.hoverCreate ? "#28242E" : "#1E1A24";
     c.fill();
     c.strokeStyle = "#A898C0"; c.lineWidth = 2; c.stroke();
     c.font = `${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#A898C0";
-    c.fillText("JOIN GAME", CX, bj.y + bj.h/2 - 3);
+    c.fillText("CREATE GAME", CX, bc.y + bc.h/2 - 3);
 
-    // vs CPU button (muted teal)
-    const bcpu = BTN_CPU;
-    roundRect(c, bcpu.x, bcpu.y, bcpu.w, bcpu.h, bcpu.r);
-    c.fillStyle = state.hoverCPU ? "#1E2A2A" : "#141E1E";
+    // Join Game button (muted teal)
+    const bj = BTN_JOIN;
+    roundRect(c, bj.x, bj.y, bj.w, bj.h, bj.r);
+    c.fillStyle = state.hoverJoin ? "#1E2A2A" : "#141E1E";
     c.fill();
     c.strokeStyle = "#7AAA9E"; c.lineWidth = 2; c.stroke();
     c.font = `${(btnFontSize)|0}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#7AAA9E";
-    c.fillText("VS CPU", CX, bcpu.y + bcpu.h/2 - 3);
+    c.fillText("JOIN GAME", CX, bj.y + bj.h/2 - 3);
 
     // Hot Seat button (warm amber)
     const bh = BTN_HOTSEAT;
@@ -1685,12 +1685,30 @@ function drawLobby(c, now) {
         "Triangles adjacent to the Scarlet Triangle score points.",
         "Whoever has the most points at the end of two rounds is the winner!"
       ];
-      const lineH = 40, pad = 50;
-      const boxW = 840, boxR = 14;
-      const titleGap = 68;
+
+      // Size everything proportionally to canvas
+      const boxW = Math.min(W * 0.88, H * 1.56);
+      const boxR = Math.max(4, H * 0.026);
+
+      // Determine body font size that fits all lines within the box width
+      const maxBodyFontSize = H * 0.033;
+      const textPad = boxW * 0.04; // horizontal padding inside box
+      let bodyFontSize = maxBodyFontSize;
+      for (const line of lines) {
+        c.font = `${bodyFontSize|0}px 'VCR OSD Mono', monospace`;
+        while (bodyFontSize > 6 && c.measureText(line).width > boxW - textPad * 2) {
+          bodyFontSize -= 0.5;
+          c.font = `${bodyFontSize|0}px 'VCR OSD Mono', monospace`;
+        }
+      }
+
+      const titleFontSize = Math.max(8, Math.min(H * 0.07, bodyFontSize * 2.8));
+      const lineH = bodyFontSize * 2.2;
+      const titleGap = titleFontSize * 1.2;
+      const pad = H * 0.05;
+      const closeH = H * 0.06;
       const contentH = titleGap + (lines.length - 1) * lineH;
-      const closeH = 46;
-      const boxH = contentH + closeH + pad * 2 + 44;
+      const boxH = contentH + closeH + pad * 2 + H * 0.04;
       const boxX = CX - boxW/2, boxY = CY - boxH/2;
 
       roundRect(c, boxX, boxY, boxW, boxH, boxR);
@@ -1700,20 +1718,20 @@ function drawLobby(c, now) {
       const contentArea = boxH - closeH;
       const titleY = boxY + (contentArea - contentH) / 2;
 
-      c.font = `${Math.max(12, H * 0.089)|0}px 'VCR OSD Mono', monospace`;
+      c.font = `${titleFontSize|0}px 'VCR OSD Mono', monospace`;
       c.textAlign = "center"; c.textBaseline = "middle";
       c.fillStyle = COL.scarletBright;
       c.fillText("HOW TO PLAY", CX, titleY);
 
-      c.font = `${Math.max(6, H * 0.033)|0}px 'VCR OSD Mono', monospace`;
+      c.font = `${bodyFontSize|0}px 'VCR OSD Mono', monospace`;
       c.fillStyle = "#CCD";
       for (let i = 0; i < lines.length; i++) {
         c.fillText(lines[i], CX, titleY + titleGap + i * lineH);
       }
 
-      c.font = `${Math.max(5, H * 0.024)|0}px 'VCR OSD Mono', monospace`;
+      c.font = `${Math.max(5, H * 0.022)|0}px 'VCR OSD Mono', monospace`;
       c.fillStyle = "#667";
-      c.fillText("Click anywhere to close", CX, boxY + boxH - 18);
+      c.fillText("Click anywhere to close", CX, boxY + boxH - H * 0.03);
     }
   }
   else if (state.phase === "waiting") {
@@ -2263,12 +2281,12 @@ function handleClick(canvasX, canvasY) {
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT)) {
       playSFX("keyclick", 0.125);
-      setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); window.location.href = "golden-triangle.html"; }, 150);
+      setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); window.location.href = "scarlet-triangle.html"; }, 150);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_CPU)) {
       playSFX("keyclick", 0.125);
-      setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); window.location.href = "golden-triangle.html?cpu=1"; }, 150);
+      setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); window.location.href = "scarlet-triangle.html?cpu=1"; }, 150);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOWTO)) {
