@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <base href="/triangle/">
-<title>Scarlet Triangle - Online</title>
+<title>Scarlet Triangle</title>
 <link href="https://fonts.googleapis.com/css2?family=Allura&family=Merriweather:wght@400;700&display=block" rel="stylesheet">
 <link href="https://fonts.cdnfonts.com/css/vcr-osd-mono" rel="stylesheet"><!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -14,12 +14,10 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#120A0E;user-select:none;-webkit-user-select:none}
 canvas{display:block;position:absolute;width:100%;height:100%}
-#game-iframe{display:none;position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:9999}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<iframe id="game-iframe" allow="autoplay; fullscreen" allowfullscreen></iframe>
 <script>
 "use strict";
 // ── Dynamic Game Dimensions ────────────────────────────────────
@@ -29,36 +27,15 @@ let S = 66;
 let TH = S * 0.8660254;
 let PIECE_S = 58;
 
-// Iframe-based game loading (avoids page navigation, preserves fullscreen)
-const gameIframe = document.getElementById("game-iframe");
-function launchGame(url) {
-  gameIframe.src = url;
-  gameIframe.style.display = "block";
-  // Hide parent CRT overlay once iframe has loaded to avoid brief flash
-  const crt = document.querySelector(".crt-overlay");
-  if (crt) gameIframe.addEventListener("load", () => { crt.style.display = "none"; }, { once: true });
-}
-function hideGame() {
-  gameIframe.style.display = "none";
-  gameIframe.src = "";
-  // Restore parent CRT overlay
-  const crt = document.querySelector(".crt-overlay");
-  if (crt) crt.style.display = "";
-  // Re-focus canvas so keyboard events work
-  canvas.focus();
-}
-window.addEventListener("message", (e) => {
-  if (e.data === "returnToLobby") {
-    hideGame();
-    state.phase = "lobby";
-  } else if (e.data === "toggleFullscreen") {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      document.documentElement.requestFullscreen().catch(() => {});
-    }
-  }
-});
+// ── Game Mode ─────────────────────────────────────────────────
+// "online" = Firebase multiplayer, "hotseat" = local 2-player, "cpu" = vs AI
+let GAME_MODE = "online";
+
+// ── CPU Mode Variables ────────────────────────────────────────
+let cpuDifficulty = null; // "easy", "medium", "hard"
+let cpuThinkTimer = 0;
+let cpuMoveReady = false;
+let cpuSelectedMove = null; // {pieceValue, slotId}
 
 const COL = {
   bgDeep: "#120A0E", bgMid: "#261820",
@@ -826,7 +803,7 @@ const Net = {
 // ── Game State ─────────────────────────────────────────────────
 function freshState() {
   return {
-    phase: "lobby",  // splash, boot, lobby, modeSelection, mapSelection, creating, joining, waiting, playing, roundResult, waitingAdvance, gameOver, disconnected
+    phase: "lobby",  // splash, boot, lobby, playerCountSelect, modeSelection, mapSelection, difficultySelect, localMapSelect, creating, joining, waiting, playing, roundResult, waitingAdvance, gameOver, disconnected, confirm, menuTransition
     round: 1,
     turnCount: 0,
     currentPlayer: 0,
@@ -886,6 +863,11 @@ function freshState() {
     hoverStandard: false,
     hoverRandom: false,
     hoverBackMap: false,
+    // difficulty select hover states (CPU mode)
+    hoverEasy: false,
+    hoverMedium: false,
+    hoverHard: false,
+    hoverDiffBack: false,
     // confirmation dialog state
     confirmAction: null, // "restart" or "home"
     hoverYes: false,
@@ -1134,6 +1116,435 @@ function returnToLobby() {
   updateSlots();
 }
 
+// ── Return to Menu (local games) ──────────────────────────────
+function returnToMenu() {
+  GAME_MODE = "online";
+  cpuDifficulty = null;
+  cpuThinkTimer = 0;
+  cpuMoveReady = false;
+  cpuSelectedMove = null;
+  randomMapData = null;
+  state = freshState();
+  tweens = [];
+  updateSlots();
+  resize();
+}
+
+// ── Local Game Flow ──────────────────────────────────────────
+function getPlayerName(playerIdx) {
+  if (GAME_MODE === "cpu") {
+    if (playerIdx === 0) return "YOU";
+    if (playerIdx === 1) return "CPU1";
+    return "CPU2";
+  }
+  if (playerIdx === 0) return "WHITE";
+  if (playerIdx === 1) return "BLACK";
+  return "GOLD";
+}
+
+function startMatch() {
+  const savedGameMode = state.gameMode;
+  const savedMapType = state.mapType;
+  const savedNumPlayers = state.numPlayers;
+  state = freshState();
+  state.gameMode = savedGameMode;
+  state.mapType = savedMapType;
+  state.numPlayers = savedNumPlayers;
+  if (state.numPlayers === 3) {
+    state.scores = [0, 0, 0];
+    state.roundScores = [0, 0, 0];
+    state.board = new Array(31).fill(null);
+    state.slotAnim = Array.from({length:31}, ()=>({scale:1, shakeX:0, outlineFlash:0, glow:0, hoverTint:0}));
+  }
+  if (state.gameMode === "hidden") {
+    state.whiteHiddenOrder = Math.random() < 0.5 ? [1, 10] : [10, 1];
+    state.blackHiddenOrder = Math.random() < 0.5 ? [1, 10] : [10, 1];
+  }
+  state.firstPlayer = Math.floor(Math.random() * state.numPlayers);
+  state.currentPlayer = state.firstPlayer;
+  state.round = 1;
+  tweens = [];
+  cpuThinkTimer = 0;
+  cpuMoveReady = false;
+  cpuSelectedMove = null;
+  if (state.mapType === "random") {
+    generateRandomMap();
+  } else {
+    randomMapData = null;
+  }
+  resize();
+  state.phase = "playing";
+}
+
+function startRound() {
+  const numSlots = (state.numPlayers === 3) ? 31 : 21;
+  state.board = new Array(numSlots).fill(null);
+  state.whitePieces = Array.from({length:10},(_,i)=>({value:i+1,used:false}));
+  state.blackPieces = Array.from({length:10},(_,i)=>({value:i+1,used:false}));
+  state.goldPieces = Array.from({length:10},(_,i)=>({value:i+1,used:false}));
+  state.selectedPiece = null;
+  state.turnCount = 0;
+  state.goldenSlot = -1;
+  state.roundScores = state.numPlayers === 3 ? [0, 0, 0] : [0, 0];
+  state.hiddenPiecesRevealed = false;
+  state.slotAnim = Array.from({length:numSlots}, ()=>({scale:1,shakeX:0,outlineFlash:0,glow:0,hoverTint:0}));
+  state.floatLabels = [];
+  state.revealStep = -1;
+  state.intensityLevel = 0;
+  state.outlineBrighten = 0;
+  state.vignette = 0;
+  state.gframeGlow = 0;
+  state.cameraZoom = 1;
+  state.goldFlash = 0;
+  state.resultScale = 0;
+  state.phase = "playing";
+  state.currentPlayer = (state.firstPlayer + state.round - 1) % state.numPlayers;
+  killTweens("placement");
+  killTweens("shake");
+  killTweens("reveal");
+  cpuThinkTimer = 0;
+  cpuMoveReady = false;
+  cpuSelectedMove = null;
+}
+
+function localPlacePiece(slotId) {
+  if (state.phase !== "playing") return false;
+  if (!state.selectedPiece) return false;
+  if (state.board[slotId] != null) return false;
+  const piece = state.selectedPiece;
+  state.board[slotId] = {owner: piece.owner, value: piece.value};
+  const pieces = getPiecesForOwner(piece.owner);
+  const p = pieces.find(pp => pp.value === piece.value);
+  if (p) p.used = true;
+  state.selectedPiece = null;
+  state.turnCount++;
+  playPlaceClick();
+  const sa = state.slotAnim[slotId];
+  addTween(sa, "scale", 0.85, 1.12, 70, easeOut, () => {
+    addTween(sa, "scale", 1.12, 1.0, 70, easeInOut, null, "placement");
+  }, "placement");
+  updateIntensity();
+  const totalPlacements = state.numPlayers * 10;
+  const totalSlots = totalPlacements + 1;
+  const remaining = totalSlots - state.turnCount;
+  if ([10, 5, 3, 2].includes(remaining)) {
+    addToast(`${remaining} slot${remaining > 1 ? "s" : ""} left`);
+    addTween(state, "shimmer", 1, 0, 250, easeOut, null, "shimmer");
+  }
+  if (state.turnCount === totalPlacements) {
+    addTween(state, "cameraZoom", 1.0, 1.03, 110, easeOut, () => {
+      addTween(state, "cameraZoom", 1.03, 1.0, 110, easeInOut, null, "zoom");
+    }, "zoom");
+    addTween(state, "goldFlash", 1, 0, 160, easeOut, null, "flash");
+    setTimeout(() => {
+      if (state.phase !== "playing") return;
+      beginLocalReveal();
+    }, 300);
+    return true;
+  }
+  state.currentPlayer = (state.currentPlayer + 1) % state.numPlayers;
+  return true;
+}
+
+function beginLocalReveal() {
+  if (state.gameMode === "hidden" && !state.hiddenPiecesRevealed) {
+    state.hiddenPiecesRevealed = true;
+  }
+  let emptySlot = -1;
+  for (let i = 0; i < state.board.length; i++) {
+    if (state.board[i] == null) { emptySlot = i; break; }
+  }
+  state.goldenSlot = emptySlot;
+  const adj = ADJ[emptySlot];
+  state.roundScores = state.numPlayers === 3 ? [0, 0, 0] : [0, 0];
+  const scoringPieces = [];
+  for (const a of adj) {
+    if (state.board[a]) {
+      const piece = state.board[a];
+      state.roundScores[piece.owner] += piece.value;
+      scoringPieces.push({slot: a, owner: piece.owner, value: piece.value});
+    }
+  }
+  const sa = state.slotAnim[emptySlot];
+  addTween(sa, "scale", 0.5, 1.12, 100, easeOut, () => {
+    addTween(sa, "scale", 1.12, 1.0, 100, easeInOut, null, "reveal");
+  }, "reveal");
+  scoringPieces.forEach((sp, idx) => {
+    setTimeout(() => {
+      if (state.phase !== "playing" && state.phase !== "roundResult") return;
+      const sAnim = state.slotAnim[sp.slot];
+      addTween(sAnim, "glow", 0, 1, 160, easeOut, null, "glow" + sp.slot);
+    }, 200 + idx * 160);
+  });
+  const labelStart = 200 + scoringPieces.length * 160;
+  if (scoringPieces.length > 0) {
+    setTimeout(() => { playSFX("arcade2"); }, labelStart);
+  }
+  scoringPieces.forEach((sp) => {
+    setTimeout(() => {
+      if (state.phase !== "playing" && state.phase !== "roundResult") return;
+      const slot = SLOTS[sp.slot];
+      const col = sp.owner === 0 ? COL.white : sp.owner === 2 ? COL.goldPlayerLabel : "#AAA";
+      state.floatLabels.push({ x: slot.x, y: slot.y, text: `+${sp.value}`, color: col, offsetY: 0, alpha: 1, timer: 0, dur: 350 });
+    }, labelStart);
+  });
+  setTimeout(() => {
+    if (state.phase !== "playing") return;
+    for (let p = 0; p < state.numPlayers; p++) {
+      state.scores[p] += state.roundScores[p];
+    }
+    state.phase = "roundResult";
+    addTween(state, "resultScale", 0.96, 1.0, 180, easeOut, null, "result");
+  }, 900);
+}
+
+function advanceFromRoundResult() {
+  if (state.round < state.numPlayers) {
+    state.round++;
+    startRound();
+  } else {
+    state.phase = "gameOver";
+    playSFX("arcade4");
+    if (state.numPlayers === 2) {
+      const margin = Math.abs(state.scores[0] - state.scores[1]);
+      let bestMargin = 0;
+      try { bestMargin = parseInt(localStorage.getItem("goldenTriangle_bestMargin")) || 0; } catch(e) {}
+      if (margin > bestMargin && margin > 0) {
+        try { localStorage.setItem("goldenTriangle_bestMargin", String(margin)); } catch(e) {}
+      }
+    }
+  }
+}
+
+// ── CPU AI ─────────────────────────────────────────────────────
+function isCPUTurn() {
+  return GAME_MODE === "cpu" && state.phase === "playing" && state.currentPlayer !== 0;
+}
+
+function updateCPU(dt) {
+  if (!isCPUTurn()) {
+    cpuThinkTimer = 0;
+    cpuMoveReady = false;
+    cpuSelectedMove = null;
+    return;
+  }
+  if (!cpuMoveReady) {
+    cpuThinkTimer += dt * 1000;
+    const thinkDelay = 400 + Math.random() * 400;
+    if (cpuThinkTimer >= thinkDelay) {
+      cpuSelectedMove = computeCPUMove();
+      cpuMoveReady = true;
+      cpuThinkTimer = 0;
+    }
+    return;
+  }
+  if (cpuSelectedMove) {
+    state.selectedPiece = { owner: state.currentPlayer, value: cpuSelectedMove.pieceValue };
+    localPlacePiece(cpuSelectedMove.slotId);
+  }
+  cpuMoveReady = false;
+  cpuSelectedMove = null;
+  cpuThinkTimer = 0;
+}
+
+function computeCPUMove() {
+  if (cpuDifficulty === "easy") return cpuMoveEasy();
+  if (cpuDifficulty === "medium") return cpuMoveMedium();
+  return cpuMoveHard();
+}
+
+function getAvailablePieces() {
+  return getPiecesForOwner(state.currentPlayer).filter(p => !p.used);
+}
+
+function getEmptySlots() {
+  const empty = [];
+  for (let i = 0; i < state.board.length; i++) {
+    if (state.board[i] == null) empty.push(i);
+  }
+  return empty;
+}
+
+function goldenSlotDelta(slotId) {
+  const me = state.currentPlayer;
+  let myVal = 0, oppVal = 0;
+  for (const a of ADJ[slotId]) {
+    if (state.board[a]) {
+      if (state.board[a].owner === me) myVal += state.board[a].value;
+      else oppVal += state.board[a].value;
+    }
+  }
+  return myVal - oppVal;
+}
+
+function cpuMoveEasy() {
+  const pieces = getAvailablePieces();
+  const slots = getEmptySlots();
+  if (pieces.length === 0 || slots.length === 0) return null;
+  let bestScore = -Infinity;
+  let bestMove = null;
+  for (const piece of pieces) {
+    for (const slotId of slots) {
+      let score = 0;
+      const adj = ADJ[slotId];
+      const delta = goldenSlotDelta(slotId);
+      score -= delta * 1.2;
+      let emptyNeighbors = 0;
+      for (const a of adj) {
+        if (state.board[a] == null) emptyNeighbors++;
+      }
+      score += emptyNeighbors * 0.5;
+      score += Math.random() * 6;
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = { pieceValue: piece.value, slotId };
+      }
+    }
+  }
+  return bestMove;
+}
+
+function cpuMoveMedium() {
+  const pieces = getAvailablePieces();
+  const slots = getEmptySlots();
+  if (pieces.length === 0 || slots.length === 0) return null;
+  let bestScore = -Infinity;
+  let bestMove = null;
+  for (const piece of pieces) {
+    for (const slotId of slots) {
+      let score = 0;
+      const adj = ADJ[slotId];
+      const delta = goldenSlotDelta(slotId);
+      score -= delta * 3.0;
+      let emptyNeighbors = 0;
+      for (const a of adj) {
+        if (state.board[a] == null) emptyNeighbors++;
+      }
+      const slotsAfter = slots.length - 1;
+      if (slotsAfter > 0) {
+        score += piece.value * emptyNeighbors * (1.0 / slotsAfter) * 2.0;
+      }
+      for (const a of adj) {
+        if (state.board[a] != null) continue;
+        score += piece.value * 0.3;
+      }
+      score += adj.length * 0.5;
+      if (emptyNeighbors === 0 && piece.value >= 5) {
+        score -= piece.value * 0.6;
+      }
+      score += Math.random() * 1.5;
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = { pieceValue: piece.value, slotId };
+      }
+    }
+  }
+  return bestMove;
+}
+
+function cpuMoveHard() {
+  const pieces = getAvailablePieces();
+  const slots = getEmptySlots();
+  if (pieces.length === 0 || slots.length === 0) return null;
+  if (slots.length === 2 && pieces.length === 1) {
+    return cpuMoveLastPiece(pieces[0], slots);
+  }
+  let bestScore = -Infinity;
+  let bestMove = null;
+  for (const piece of pieces) {
+    for (const slotId of slots) {
+      const score = evaluateHardMove(piece, slotId, pieces, slots);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = { pieceValue: piece.value, slotId };
+      }
+    }
+  }
+  return bestMove;
+}
+
+function cpuMoveLastPiece(piece, slots) {
+  let bestDelta = -Infinity;
+  let bestSlot = slots[0];
+  for (let i = 0; i < 2; i++) {
+    const placeSlot = slots[i];
+    const goldenSlot = slots[1 - i];
+    const me = state.currentPlayer;
+    let myScore = 0, oppScore = 0;
+    for (const a of ADJ[goldenSlot]) {
+      if (a === placeSlot) {
+        myScore += piece.value;
+      } else if (state.board[a]) {
+        if (state.board[a].owner === me) myScore += state.board[a].value;
+        else oppScore += state.board[a].value;
+      }
+    }
+    const delta = myScore - oppScore;
+    if (delta > bestDelta) {
+      bestDelta = delta;
+      bestSlot = placeSlot;
+    }
+  }
+  return { pieceValue: piece.value, slotId: bestSlot };
+}
+
+function evaluateHardMove(piece, slotId, allPieces, allSlots) {
+  let score = 0;
+  const adj = ADJ[slotId];
+  const adjCount = adj.length;
+  const remainingEmpty = allSlots.filter(s => s !== slotId);
+  const slotsAfter = remainingEmpty.length;
+  const delta = goldenSlotDelta(slotId);
+  score -= delta * 3.5;
+  if (slotsAfter <= 5) {
+    score -= delta * 2.0;
+  }
+  let emptyNeighbors = 0;
+  for (const a of adj) {
+    if (state.board[a] == null && a !== slotId) emptyNeighbors++;
+  }
+  if (slotsAfter > 0) {
+    score += piece.value * emptyNeighbors * (1.0 / slotsAfter) * 2.5;
+  }
+  for (const a of adj) {
+    if (state.board[a] != null || a === slotId) continue;
+    const neighborDelta = goldenSlotDelta(a);
+    const newDelta = neighborDelta + piece.value;
+    score += (newDelta - neighborDelta) * 0.4;
+    if (newDelta > 10 && neighborDelta <= 10) score += 2.0;
+  }
+  const gameProgress = state.turnCount / (state.numPlayers * 10);
+  if (gameProgress < 0.35 && piece.value >= 8) {
+    score -= (piece.value - 7) * 2.5;
+  }
+  if (gameProgress > 0.65 && piece.value >= 7) {
+    score += piece.value * emptyNeighbors * 0.3;
+  }
+  if (emptyNeighbors === 0 && piece.value >= 3) {
+    score -= piece.value * 1.8;
+  } else if (emptyNeighbors === 1 && piece.value >= 5) {
+    score -= piece.value * 0.5;
+  }
+  if (adjCount === 1 && piece.value >= 6) {
+    score -= piece.value * 2.0;
+  }
+  for (const a of adj) {
+    if (state.board[a] != null || a === slotId) continue;
+    let oppAroundNeighbor = 0;
+    for (const aa of ADJ[a]) {
+      if (aa === slotId) continue;
+      if (state.board[aa] && state.board[aa].owner !== state.currentPlayer) {
+        oppAroundNeighbor += state.board[aa].value;
+      }
+    }
+    if (oppAroundNeighbor >= 12) {
+      score += piece.value * 0.2;
+    }
+  }
+  score += Math.random() * 0.8;
+  return score;
+}
+
 // ── Tray Layout ────────────────────────────────────────────────
 const TRAY_COLS = 5, TRAY_ROWS = 2;
 
@@ -1169,9 +1580,15 @@ function drawTriPath(c, cx, cy, side, ori) {
 function shouldHidePiece(pieceOwner, pieceValue) {
   if (state.gameMode !== "hidden") return false;
   if (state.hiddenPiecesRevealed) return false;
-  // Hide opponent's 1 and 10 from me
-  if (pieceOwner !== Net.myIndex && (pieceValue === 1 || pieceValue === 10)) {
-    return true;
+  if (GAME_MODE === "online") {
+    // Hide opponent's 1 and 10 from me
+    if (pieceOwner !== Net.myIndex && (pieceValue === 1 || pieceValue === 10)) return true;
+  } else if (GAME_MODE === "cpu") {
+    // Hide CPU's hidden pieces from the human (player 0)
+    if (pieceOwner !== 0 && (pieceValue === 1 || pieceValue === 10)) return true;
+  } else {
+    // Hot seat: hide ALL 1 and 10 (shared screen)
+    if (pieceValue === 1 || pieceValue === 10) return true;
   }
   return false;
 }
@@ -1353,7 +1770,7 @@ function drawTrays(c, now) {
   c.save();
   c.translate(CX,CY); c.scale(zoom,zoom); c.translate(-CX,-CY);
 
-  const myIdx = Net.myIndex;
+  const myIdx = GAME_MODE === "online" ? Net.myIndex : 0;
 
   for (let owner = 0; owner < state.numPlayers; owner++) {
     const pieces = getPiecesForOwner(owner);
@@ -1369,8 +1786,8 @@ function drawTrays(c, now) {
       let sc = 1;
 
       const isSelected = state.selectedPiece && state.selectedPiece.owner === owner && state.selectedPiece.value === p.value;
-      // Show opponent's selection with a dimmer indicator
-      const isOpponentSelected = owner !== myIdx && state.opponentSelectedValue === p.value;
+      // Show opponent's selection with a dimmer indicator (online only)
+      const isOpponentSelected = GAME_MODE === "online" && owner !== myIdx && state.opponentSelectedValue === p.value;
 
       if (isSelected) sc = 1.05;
 
@@ -1387,8 +1804,8 @@ function drawTrays(c, now) {
         c.globalAlpha = 0.5; c.stroke(); c.globalAlpha = 1;
       }
 
-      // Dim opponent's tray slightly
-      if (owner !== myIdx) c.globalAlpha = 0.6;
+      // Dim opponent's tray slightly (online only)
+      if (GAME_MODE === "online" && owner !== myIdx) c.globalAlpha = 0.6;
       const isHidden = shouldHidePiece(owner, p.value);
       drawBevelTri(c, pos.x, pos.y, pieceS, "down", pc.base, pc.hi, pc.sh, pc.label, p.value, sc, isHidden);
       c.globalAlpha = 1;
@@ -1408,8 +1825,13 @@ function drawTrays(c, now) {
     } else {
       c.fillStyle = labelColors[owner];
     }
-    const names = ["WHITE", "BLACK", "GOLD"];
-    const trayLabel = (owner === Net.myIndex) ? "YOU" : names[owner];
+    let trayLabel;
+    if (GAME_MODE === "online") {
+      const names = ["WHITE", "BLACK", "GOLD"];
+      trayLabel = (owner === Net.myIndex) ? "YOU" : names[owner];
+    } else {
+      trayLabel = getPlayerName(owner);
+    }
     c.fillText(trayLabel, lx, ly - pieceS * 1.7);
     c.globalAlpha = 1;
   }
@@ -1446,8 +1868,9 @@ function drawHUD(c, now) {
   // Scores (top right, stacked — same row)
   c.font = `${(baseFontSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "right"; c.textBaseline = "top";
-  const myIdx = Net.myIndex;
-  const hudNames = ["WHITE", "BLACK", "GOLD"].map((n, i) => i === myIdx ? "YOU" : n);
+  const hudNames = GAME_MODE === "online"
+    ? ["WHITE", "BLACK", "GOLD"].map((n, i) => i === Net.myIndex ? "YOU" : n)
+    : [getPlayerName(0), getPlayerName(1), getPlayerName(2)];
   c.fillStyle = COL.white;
   c.fillText(`${hudNames[0]}: ${state.scores[0]}`, W - margin - bezelPad, topY);
   c.fillStyle = "#999";
@@ -1457,12 +1880,14 @@ function drawHUD(c, now) {
     c.fillText(`${hudNames[2]}: ${state.scores[2]}`, W - margin - bezelPad, topY + baseFontSize * 2.8);
   }
 
-  // Room code
-  c.font = `${Math.max(4, baseFontSize * 0.65)|0}px 'VCR OSD Mono', monospace`;
-  c.textAlign = "right";
-  c.fillStyle = "#556";
-  const roomCodeY = state.numPlayers === 3 ? topY + baseFontSize * 4.2 : topY + baseFontSize * 3;
-  c.fillText(`ROOM: ${Net.roomCode}`, W - margin - bezelPad, roomCodeY);
+  // Room code (online only)
+  if (GAME_MODE === "online") {
+    c.font = `${Math.max(4, baseFontSize * 0.65)|0}px 'VCR OSD Mono', monospace`;
+    c.textAlign = "right";
+    c.fillStyle = "#556";
+    const roomCodeY = state.numPlayers === 3 ? topY + baseFontSize * 4.2 : topY + baseFontSize * 3;
+    c.fillText(`ROOM: ${Net.roomCode}`, W - margin - bezelPad, roomCodeY);
+  }
 
   // Restart and Home buttons
   const btnW = Math.max(20, W * 0.06);
@@ -2013,6 +2438,114 @@ function drawModeSelection(c) {
   c.restore();
 }
 
+function getDifficultyButtons() {
+  const bw = Math.max(80, W * 0.27);
+  const bh = Math.max(16, H * 0.09);
+  return {
+    easy:   { x: CX - bw * 0.54, y: H * 0.30, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    medium: { x: CX - bw * 0.54, y: H * 0.46, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    hard:   { x: CX - bw * 0.54, y: H * 0.62, w: bw * 1.08, h: bh * 1.6, r: 10 },
+    back:   { x: CX - bw * 0.3,  y: H * 0.80, w: bw * 0.6,  h: bh * 0.8, r: 8 }
+  };
+}
+
+function drawDifficultySelect(c) {
+  if (state.phase !== "difficultySelect") return;
+  c.save();
+  c.fillStyle = "rgba(14,8,10,0.8)";
+  c.fillRect(0, 0, W, H);
+  c.save();
+  for (const s of specks) {
+    c.beginPath(); c.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    c.shadowColor = `rgba(220,215,255,${s.a * 0.5})`; c.shadowBlur = s.r * 4;
+    c.fillStyle = `rgba(230,225,240,${s.a * 0.8})`; c.fill();
+  }
+  c.restore();
+  const titleSize = Math.max(8, H * 0.067);
+  c.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = COL.scarletBright;
+  c.fillText("Select Difficulty", CX, H * 0.16);
+  const btns = getDifficultyButtons();
+  const btnTitleSize = Math.max(7, H * 0.044);
+  const btnSubSize = Math.max(5, H * 0.026);
+  // Easy
+  roundRect(c, btns.easy.x, btns.easy.y, btns.easy.w, btns.easy.h, btns.easy.r);
+  c.fillStyle = state.hoverEasy ? "#1E2A2A" : "#141E1E"; c.fill();
+  c.strokeStyle = "#7AAA9E"; c.lineWidth = 2; c.stroke();
+  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#7AAA9E"; c.fillText("EASY", CX, btns.easy.y + btns.easy.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#889"; c.fillText("A SILLY GOOSE", CX, btns.easy.y + btns.easy.h * 0.68);
+  // Medium
+  roundRect(c, btns.medium.x, btns.medium.y, btns.medium.w, btns.medium.h, btns.medium.r);
+  c.fillStyle = state.hoverMedium ? "#2E261A" : "#221C12"; c.fill();
+  c.strokeStyle = "#C4A068"; c.lineWidth = 2; c.stroke();
+  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#C4A068"; c.fillText("MEDIUM", CX, btns.medium.y + btns.medium.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#889"; c.fillText("A STEPPING STONE", CX, btns.medium.y + btns.medium.h * 0.68);
+  // Hard
+  roundRect(c, btns.hard.x, btns.hard.y, btns.hard.w, btns.hard.h, btns.hard.r);
+  c.fillStyle = state.hoverHard ? "#2E2020" : "#241818"; c.fill();
+  c.strokeStyle = "#C47878"; c.lineWidth = 2; c.stroke();
+  c.font = `bold ${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#C47878"; c.fillText("HARD", CX, btns.hard.y + btns.hard.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#889"; c.fillText("A WORTHY ADVERSARY", CX, btns.hard.y + btns.hard.h * 0.68);
+  // Back
+  roundRect(c, btns.back.x, btns.back.y, btns.back.w, btns.back.h, btns.back.r);
+  c.fillStyle = state.hoverDiffBack ? "#2A2024" : "#1E1618"; c.fill();
+  c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+  c.font = `${Math.max(7, H * 0.038)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#AAB"; c.fillText("BACK", CX, btns.back.y + btns.back.h / 2 - 3);
+  c.restore();
+}
+
+function drawLocalMapSelect(c) {
+  if (state.phase !== "localMapSelect") return;
+  const {BTN_STANDARD, BTN_RANDOM, BTN_BACK_MAP} = getButtons();
+  c.save();
+  c.fillStyle = "rgba(14,8,10,0.75)"; c.fillRect(0, 0, W, H);
+  c.save();
+  for (const s of specks) {
+    c.beginPath(); c.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    c.shadowColor = `rgba(220,215,255,${s.a * 0.5})`; c.shadowBlur = s.r * 4;
+    c.fillStyle = `rgba(230,225,240,${s.a * 0.8})`; c.fill();
+  }
+  c.restore();
+  const titleSize = Math.max(8, H * 0.067);
+  c.font = `bold ${(titleSize * 1.8)|0}px 'Allura', cursive`;
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = COL.scarletBright;
+  c.fillText("Select Map", CX, H * 0.22);
+  const btnTitleSize = Math.max(7, H * 0.044);
+  const btnSubSize = Math.max(5, H * 0.026);
+  const bs = BTN_STANDARD;
+  roundRect(c, bs.x, bs.y, bs.w, bs.h, bs.r);
+  c.fillStyle = state.hoverStandard ? "#2E2020" : "#241818"; c.fill();
+  c.strokeStyle = "#C47878"; c.lineWidth = 2; c.stroke();
+  c.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#C47878"; c.fillText("STANDARD MAP", CX, bs.y + bs.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#889"; c.fillText("CLASSIC TRIANGLE LAYOUT", CX, bs.y + bs.h * 0.68);
+  const br = BTN_RANDOM;
+  roundRect(c, br.x, br.y, br.w, br.h, br.r);
+  c.fillStyle = state.hoverRandom ? "#1E2A2A" : "#141E1E"; c.fill();
+  c.strokeStyle = "#7AAA9E"; c.lineWidth = 2; c.stroke();
+  c.font = `${(btnTitleSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#7AAA9E"; c.fillText("RANDOM MAP", CX, br.y + br.h * 0.35);
+  c.font = `${(btnSubSize * 0.9)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#889"; c.fillText("RANDOMLY GENERATED BOARD", CX, br.y + br.h * 0.68);
+  const bb = BTN_BACK_MAP;
+  roundRect(c, bb.x, bb.y, bb.w, bb.h, bb.r);
+  c.fillStyle = state.hoverBackMap ? "#2A2024" : "#1E1618"; c.fill();
+  c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+  c.font = `${Math.max(7, H * 0.039)|0}px 'VCR OSD Mono', monospace`;
+  c.fillStyle = "#AAB"; c.fillText("BACK", CX, bb.y + bb.h/2 - 3);
+  c.restore();
+}
+
 function drawMapSelection(c) {
   if (state.phase !== "mapSelection") return;
 
@@ -2180,8 +2713,9 @@ function drawRoundResult(c) {
   c.fillText(`ROUND ${state.round} RESULTS`, CX, py + titleSize * 2);
 
   c.font = `${(scoreSize * 0.8)|0}px 'VCR OSD Mono', monospace`;
-  const myIdx = Net.myIndex;
-  const rrNames = ["WHITE", "BLACK", "GOLD"].map((n, i) => i === myIdx ? "YOU" : n);
+  const rrNames = GAME_MODE === "online"
+    ? ["WHITE", "BLACK", "GOLD"].map((n, i) => i === Net.myIndex ? "YOU" : n)
+    : [getPlayerName(0), getPlayerName(1), getPlayerName(2)];
 
   if (state.numPlayers === 3) {
     c.fillStyle = COL.white;
@@ -2197,13 +2731,13 @@ function drawRoundResult(c) {
     c.fillText(`${rrNames[1]}: ${state.roundScores[1]}`, CX, py + ph/2 + scoreSize*3/4);
   }
 
-  if (state.phase === "waitingAdvance") {
+  if (GAME_MODE === "online" && state.phase === "waitingAdvance") {
     const promptSize2 = Math.max(5, H * 0.02);
     c.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
     c.fillStyle = "#667";
     const waitAdvText = state.numPlayers === 3 ? "WAITING FOR OPPONENTS..." : "WAITING FOR OPPONENT...";
     c.fillText(waitAdvText, CX, py + ph - titleSize * 2);
-  } else {
+  } else if (state.phase === "roundResult") {
     const blink = Math.sin(performance.now() / 400) > 0 ? 1 : 0.6;
     c.globalAlpha = blink;
     const promptSize2 = Math.max(5, H * 0.02);
@@ -2234,22 +2768,38 @@ function drawGameOver(c) {
   roundRect(c, px, py, pw, ph, 12);
   c.fill(); c.stroke();
 
-  const myIdx = Net.myIndex;
-  const winner = state._onlineWinner;
-  let heading;
-  if (winner === -1) heading = "Draw!";
-  else if (winner === myIdx) heading = "You Win!";
-  else heading = "You Lose";
+  let heading, headingColor;
+  if (GAME_MODE === "online") {
+    const myIdx = Net.myIndex;
+    const winner = state._onlineWinner;
+    if (winner === -1) { heading = "DRAW!"; headingColor = "#AAB"; }
+    else if (winner === myIdx) { heading = "YOU WIN!"; headingColor = COL.scarletBright; }
+    else { heading = "YOU LOSE"; headingColor = COL.denied; }
+  } else {
+    // Local game: calculate winner
+    if (state.numPlayers === 3) {
+      const maxScore = Math.max(...state.scores);
+      const winners = state.scores.reduce((arr, s, i) => { if (s === maxScore) arr.push(i); return arr; }, []);
+      if (winners.length > 1) { heading = "DRAW!"; headingColor = "#AAB"; }
+      else { heading = getPlayerName(winners[0]) + " WIN" + (GAME_MODE === "cpu" && winners[0] === 0 ? "!" : "S!"); headingColor = COL.scarletBright; }
+    } else if (state.scores[0] > state.scores[1]) {
+      heading = getPlayerName(0) + " WIN" + (GAME_MODE === "cpu" ? "!" : "S!"); headingColor = COL.scarletBright;
+    } else if (state.scores[1] > state.scores[0]) {
+      heading = getPlayerName(1) + " WIN" + (GAME_MODE === "cpu" ? "S!" : "S!"); headingColor = COL.scarletBright;
+    } else { heading = "DRAW!"; headingColor = "#AAB"; }
+  }
 
   const titleSize = Math.max(7, H * 0.04);
   const scoreSize = Math.max(8, H * 0.055);
 
   c.font = `${(scoreSize * 1.25)|0}px 'VCR OSD Mono', monospace`;
   c.textAlign = "center"; c.textBaseline = "middle";
-  c.fillStyle = winner === myIdx ? COL.scarletBright : (winner === -1 ? "#AAB" : COL.denied);
-  c.fillText(heading.toUpperCase(), CX, py + titleSize * 2);
+  c.fillStyle = headingColor;
+  c.fillText(heading, CX, py + titleSize * 2);
 
-  const goNames = ["WHITE", "BLACK", "GOLD"].map((n, i) => i === myIdx ? "YOU" : n);
+  const goNames = GAME_MODE === "online"
+    ? ["WHITE", "BLACK", "GOLD"].map((n, i) => i === Net.myIndex ? "YOU" : n)
+    : [getPlayerName(0), getPlayerName(1), getPlayerName(2)];
   c.font = `${(scoreSize * 0.8)|0}px 'VCR OSD Mono', monospace`;
   if (state.numPlayers === 3) {
     c.fillStyle = COL.white;
@@ -2270,7 +2820,8 @@ function drawGameOver(c) {
   const promptSize2 = Math.max(5, H * 0.02);
   c.font = `${promptSize2}px 'VCR OSD Mono', monospace`;
   c.fillStyle = COL.accent;
-  c.fillText("SPACE / ENTER / CLICK: RETURN TO LOBBY", CX, py + ph - titleSize * 2);
+  const goPrompt = GAME_MODE === "online" ? "SPACE / ENTER / CLICK: RETURN TO LOBBY" : "SPACE / ENTER / CLICK: RETURN TO MENU";
+  c.fillText(goPrompt, CX, py + ph - titleSize * 2);
   c.globalAlpha = 1;
 
   c.restore();
@@ -2367,7 +2918,11 @@ function handleClick(canvasX, canvasY) {
 
     if (pointInRect(canvasX, canvasY, yesBtn)) {
       playSFX("keyclick", 0.125);
-      returnToLobby();
+      if (GAME_MODE === "online") {
+        returnToLobby();
+      } else {
+        returnToMenu();
+      }
       return;
     }
 
@@ -2389,6 +2944,7 @@ function handleClick(canvasX, canvasY) {
     if (pointInRect(canvasX, canvasY, btns.BTN_CREATE)) {
       if (!Net.connected) return;
       playSFX("keyclick", 0.125);
+      GAME_MODE = "online";
       state.phase = "playerCountSelect";
       return;
     }
@@ -2401,12 +2957,14 @@ function handleClick(canvasX, canvasY) {
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT)) {
       playSFX("keyclick", 0.125);
-      setTimeout(() => launchGame("scarlet-triangle.html"), 150);
+      GAME_MODE = "hotseat";
+      state.phase = "playerCountSelect";
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_CPU)) {
       playSFX("keyclick", 0.125);
-      setTimeout(() => launchGame("scarlet-triangle.html?cpu=1"), 150);
+      GAME_MODE = "cpu";
+      state.phase = "playerCountSelect";
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOWTO)) {
@@ -2421,7 +2979,13 @@ function handleClick(canvasX, canvasY) {
     if (pointInRect(canvasX, canvasY, btns.BTN_2P)) {
       playSFX("keyclick", 0.125);
       state.numPlayers = 2;
-      state.phase = "modeSelection";
+      if (GAME_MODE === "online") {
+        state.phase = "modeSelection";
+      } else if (GAME_MODE === "cpu") {
+        state.phase = "difficultySelect";
+      } else {
+        state.phase = "localMapSelect";
+      }
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_3P)) {
@@ -2430,11 +2994,19 @@ function handleClick(canvasX, canvasY) {
       state.mapType = "random";
       state.scores = [0, 0, 0];
       state.roundScores = [0, 0, 0];
-      state.phase = "modeSelection";
+      if (GAME_MODE === "online") {
+        state.phase = "modeSelection";
+      } else if (GAME_MODE === "cpu") {
+        state.phase = "difficultySelect";
+      } else {
+        // Hotseat 3P: random map, start immediately
+        startMatch();
+      }
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_BACK_COUNT)) {
       state.phase = "lobby";
+      GAME_MODE = "online";
       return;
     }
     return;
@@ -2522,19 +3094,82 @@ function handleClick(canvasX, canvasY) {
     return;
   }
 
+  // Difficulty Select
+  if (state.phase === "difficultySelect") {
+    const dbtns = getDifficultyButtons();
+    if (pointInRect(canvasX, canvasY, dbtns.easy)) {
+      playSFX("keyclick", 0.125);
+      cpuDifficulty = "easy";
+      if (state.numPlayers === 3) { startMatch(); } else { state.phase = "localMapSelect"; }
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, dbtns.medium)) {
+      playSFX("keyclick", 0.125);
+      cpuDifficulty = "medium";
+      if (state.numPlayers === 3) { startMatch(); } else { state.phase = "localMapSelect"; }
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, dbtns.hard)) {
+      playSFX("keyclick", 0.125);
+      cpuDifficulty = "hard";
+      if (state.numPlayers === 3) { startMatch(); } else { state.phase = "localMapSelect"; }
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, dbtns.back)) {
+      state.phase = "playerCountSelect";
+      return;
+    }
+    return;
+  }
+
+  // Local Map Select
+  if (state.phase === "localMapSelect") {
+    const {BTN_STANDARD, BTN_RANDOM, BTN_BACK_MAP} = getButtons();
+    if (pointInRect(canvasX, canvasY, BTN_STANDARD)) {
+      playSFX("keyclick", 0.125);
+      state.mapType = "standard";
+      randomMapData = null;
+      startMatch();
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, BTN_RANDOM)) {
+      playSFX("keyclick", 0.125);
+      state.mapType = "random";
+      startMatch();
+      return;
+    }
+    if (pointInRect(canvasX, canvasY, BTN_BACK_MAP)) {
+      if (GAME_MODE === "cpu") {
+        state.phase = "difficultySelect";
+      } else {
+        state.phase = "playerCountSelect";
+      }
+      return;
+    }
+    return;
+  }
+
   // Round result - advance
   if (state.phase === "roundResult") {
-    state.phase = "waitingAdvance";
-    Net.advanceRound();
+    if (GAME_MODE === "online") {
+      state.phase = "waitingAdvance";
+      Net.advanceRound();
+    } else {
+      advanceFromRoundResult();
+    }
     return;
   }
 
   // Waiting for advance ack
   if (state.phase === "waitingAdvance") return;
 
-  // Game over - return to lobby
+  // Game over - return to lobby/menu
   if (state.phase === "gameOver") {
-    returnToLobby();
+    if (GAME_MODE === "online") {
+      returnToLobby();
+    } else {
+      returnToMenu();
+    }
     return;
   }
 
@@ -2578,7 +3213,10 @@ function handleClick(canvasX, canvasY) {
   // Playing - game actions
   if (state.phase !== "playing") return;
 
-  const myIdx = Net.myIndex;
+  // Block input during CPU turn
+  if (isCPUTurn()) return;
+
+  const myIdx = GAME_MODE === "online" ? Net.myIndex : (GAME_MODE === "cpu" ? 0 : state.currentPlayer);
   const isMyTurn = state.currentPlayer === myIdx;
 
   const zoom = state.cameraZoom;
@@ -2605,10 +3243,10 @@ function handleClick(canvasX, canvasY) {
 
         if (state.selectedPiece && state.selectedPiece.value === p.value && state.selectedPiece.owner === owner) {
           state.selectedPiece = null;
-          Net.selectPiece(-1);
+          if (GAME_MODE === "online") Net.selectPiece(-1);
         } else {
           state.selectedPiece = { owner, value: p.value };
-          Net.selectPiece(p.value);
+          if (GAME_MODE === "online") Net.selectPiece(p.value);
         }
         return;
       }
@@ -2628,8 +3266,11 @@ function handleClick(canvasX, canvasY) {
       if (state.board[i] != null) { denySlot(i); return; }
       if (!state.selectedPiece) { denySlot(i); return; }
 
-      // Place piece via Firebase
-      Net.placePiece(i, state.selectedPiece.value);
+      if (GAME_MODE === "online") {
+        Net.placePiece(i, state.selectedPiece.value);
+      } else {
+        localPlacePiece(i);
+      }
       return;
     }
   }
@@ -2701,6 +3342,20 @@ function handleMouseMove(canvasX, canvasY) {
     state.hoverBackMap = pointInRect(canvasX, canvasY, btns.BTN_BACK_MAP);
     return;
   }
+  if (state.phase === "difficultySelect") {
+    const dbtns = getDifficultyButtons();
+    state.hoverEasy = pointInRect(canvasX, canvasY, dbtns.easy);
+    state.hoverMedium = pointInRect(canvasX, canvasY, dbtns.medium);
+    state.hoverHard = pointInRect(canvasX, canvasY, dbtns.hard);
+    state.hoverDiffBack = pointInRect(canvasX, canvasY, dbtns.back);
+    return;
+  }
+  if (state.phase === "localMapSelect") {
+    state.hoverStandard = pointInRect(canvasX, canvasY, btns.BTN_STANDARD);
+    state.hoverRandom = pointInRect(canvasX, canvasY, btns.BTN_RANDOM);
+    state.hoverBackMap = pointInRect(canvasX, canvasY, btns.BTN_BACK_MAP);
+    return;
+  }
 
   // Confirmation dialog hovers
   if (state.phase === "confirm") {
@@ -2737,7 +3392,8 @@ function handleMouseMove(canvasX, canvasY) {
   const htpBtn = {x: restartBtn.x, y: homeBtn.y + homeBtn.h + 4, w: homeBtn.x + homeBtn.w - restartBtn.x, h: bh};
   state.hoverHowTo = pointInRect(canvasX, canvasY, htpBtn);
 
-  const myIdx = Net.myIndex;
+  if (isCPUTurn()) { hoveredSlot = -1; return; }
+  const myIdx = GAME_MODE === "online" ? Net.myIndex : (GAME_MODE === "cpu" ? 0 : state.currentPlayer);
   const isMyTurn = state.currentPlayer === myIdx;
   if (!isMyTurn) { hoveredSlot = -1; return; }
 
@@ -2827,16 +3483,18 @@ document.addEventListener("keydown", (e) => {
   if (key === " " || key === "Enter") {
     e.preventDefault();
     if (state.phase === "roundResult") {
-      state.phase = "waitingAdvance";
-      Net.send({ type: "advance_round" });
+      if (GAME_MODE === "online") {
+        state.phase = "waitingAdvance";
+        Net.advanceRound();
+      } else {
+        advanceFromRoundResult();
+      }
     } else if (state.phase === "gameOver") {
-      returnToLobby();
-    }
-  }
-
-  if (key === "r" || key === "R") {
-    if (state.phase === "playing" || state.phase === "roundResult" || state.phase === "gameOver" || state.phase === "waitingAdvance") {
-      returnToLobby();
+      if (GAME_MODE === "online") {
+        returnToLobby();
+      } else {
+        returnToMenu();
+      }
     }
   }
 
@@ -2845,10 +3503,19 @@ document.addEventListener("keydown", (e) => {
       returnToLobby();
     } else if (state.phase === "playerCountSelect") {
       state.phase = "lobby";
+      GAME_MODE = "online";
     } else if (state.phase === "modeSelection") {
       state.phase = "playerCountSelect";
     } else if (state.phase === "mapSelection") {
       state.phase = "modeSelection";
+    } else if (state.phase === "difficultySelect") {
+      state.phase = "playerCountSelect";
+    } else if (state.phase === "localMapSelect") {
+      if (GAME_MODE === "cpu") {
+        state.phase = "difficultySelect";
+      } else {
+        state.phase = "playerCountSelect";
+      }
     }
   }
 });
@@ -2951,6 +3618,7 @@ function frame(now) {
   updateShakeTweens(now);
   updateSpecks(dt);
   updateFloatLabels(dt);
+  if (GAME_MODE === "cpu") updateCPU(dt);
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2960,7 +3628,7 @@ function frame(now) {
   drawBackground(ctx);
 
   // Game layers (only when in a game)
-  const inGame = ["playing", "roundResult", "waitingAdvance", "gameOver", "disconnected", "confirm"].includes(state.phase);
+  const inGame = ["playing", "roundResult", "waitingAdvance", "gameOver", "disconnected", "confirm", "menuTransition"].includes(state.phase);
   if (inGame) {
     drawBoard(ctx, now);
     if (state.mapType !== "random") drawGFrame(ctx, now);
@@ -2980,6 +3648,8 @@ function frame(now) {
   drawModeSelection(ctx);
   drawMapSelection(ctx);
   drawPlayerCountSelect(ctx);
+  drawDifficultySelect(ctx);
+  drawLocalMapSelect(ctx);
 
   // Splash & boot overlays (drawn on top of everything)
   drawSplash(ctx, now);
@@ -3164,7 +3834,7 @@ requestAnimationFrame(frame);
   setInterval(() => {
     const phase = typeof state !== 'undefined' ? state.phase : '';
     const onTitle = phase === 'lobby';
-    const onSubmenu = phase === 'playerCountSelect' || phase === 'modeSelection' || phase === 'mapSelection';
+    const onSubmenu = phase === 'playerCountSelect' || phase === 'modeSelection' || phase === 'mapSelection' || phase === 'difficultySelect' || phase === 'localMapSelect';
     flickerEl.classList.toggle('active', onTitle);
     flickerEl.classList.toggle('submenu', onSubmenu);
     crtOverlay.classList.toggle('submenu', onSubmenu);
