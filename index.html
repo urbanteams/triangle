@@ -34,10 +34,16 @@ const gameIframe = document.getElementById("game-iframe");
 function launchGame(url) {
   gameIframe.src = url;
   gameIframe.style.display = "block";
+  // Hide parent CRT overlay so it doesn't stack on top of iframe
+  const crt = document.querySelector(".crt-overlay");
+  if (crt) crt.style.display = "none";
 }
 function hideGame() {
   gameIframe.style.display = "none";
   gameIframe.src = "";
+  // Restore parent CRT overlay
+  const crt = document.querySelector(".crt-overlay");
+  if (crt) crt.style.display = "";
   // Re-focus canvas so keyboard events work
   canvas.focus();
 }
