@@ -34,9 +34,9 @@ const gameIframe = document.getElementById("game-iframe");
 function launchGame(url) {
   gameIframe.src = url;
   gameIframe.style.display = "block";
-  // Hide parent CRT overlay so it doesn't stack on top of iframe
+  // Hide parent CRT overlay once iframe has loaded to avoid brief flash
   const crt = document.querySelector(".crt-overlay");
-  if (crt) crt.style.display = "none";
+  if (crt) gameIframe.addEventListener("load", () => { crt.style.display = "none"; }, { once: true });
 }
 function hideGame() {
   gameIframe.style.display = "none";
