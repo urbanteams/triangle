@@ -2945,12 +2945,6 @@ requestAnimationFrame(frame);
 
 <script>
 (function() {
-  // Hide CRT overlay entirely when running inside iframe (parent has its own)
-  if (window.parent !== window) {
-    document.querySelector('.crt-overlay').style.display = 'none';
-    return;
-  }
-
   const noiseCanvas = document.getElementById('crtNoiseCanvas');
   const noiseCtx = noiseCanvas.getContext('2d');
   const flickerEl = document.getElementById('crtFlicker');
