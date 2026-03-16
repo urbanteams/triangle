@@ -26,33 +26,15 @@ let PIECE_S = 58; // piece render side (smaller than slot to prevent overlap)
 // Per-owner tray sizing (gold may be compressed in wide 3P layout)
 let TRAY_GOLD_PIECE_S, TRAY_GOLD_SPACEX, TRAY_GOLD_SPACEY;
 
-// Fullscreen persistence across page navigation
-function navigateTo(url) {
-  if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
-  window.location.href = url;
-}
-function navigateToDelayed(url, delay) {
-  if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
-  setTimeout(() => { window.location.href = url; }, delay);
-}
-(function restoreFullscreen() {
-  if (!sessionStorage.getItem("wasFullscreen")) return;
-  sessionStorage.removeItem("wasFullscreen");
-  // Try immediately (works in some browsers during navigation)
-  document.documentElement.requestFullscreen().catch(() => {});
-  // Also restore on first user interaction (capture phase, fires before game handlers)
-  function tryRestore() {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    }
-    for (const evt of ["pointerdown", "mousedown", "click", "keydown"]) {
-      document.removeEventListener(evt, tryRestore, true);
-    }
+// Detect if running inside iframe (launched from index.html)
+const IN_IFRAME = window.parent !== window;
+function goHome() {
+  if (IN_IFRAME) {
+    window.parent.postMessage("returnToLobby", "*");
+  } else {
+    window.location.href = "index.html";
   }
-  for (const evt of ["pointerdown", "mousedown", "click", "keydown"]) {
-    document.addEventListener(evt, tryRestore, true);
-  }
-})();
+}
 
 // Colors
 const COL = {
@@ -2035,7 +2017,7 @@ function handleClick(canvasX, canvasY) {
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.back)) {
-      sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html");
+      goHome();
       return;
     }
     return;
@@ -2094,7 +2076,7 @@ function handleClick(canvasX, canvasY) {
         resize();
       } else if (state.confirmAction === "home") {
         playSFX("keyclick", 0.125);
-        setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html"); }, 150);
+        setTimeout(() => { goHome(); }, 150);
       }
       return;
     }
@@ -2147,7 +2129,7 @@ function handleClick(canvasX, canvasY) {
 
   // Game over - return to main page
   if (state.phase === "gameOver") {
-    sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html");
+    goHome();
     return;
   }
 
@@ -2421,7 +2403,9 @@ document.addEventListener("keydown", (e) => {
 
   // Fullscreen toggle
   if (key === "f" || key === "F") {
-    if (document.fullscreenElement) {
+    if (IN_IFRAME) {
+      window.parent.postMessage("toggleFullscreen", "*");
+    } else if (document.fullscreenElement) {
       document.exitFullscreen();
     } else {
       document.documentElement.requestFullscreen().catch(() => {});
@@ -2434,14 +2418,14 @@ document.addEventListener("keydown", (e) => {
     if (state.phase === "roundResult") {
       advanceFromRoundResult();
     } else if (state.phase === "gameOver") {
-      sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html");
+      goHome();
     }
   }
 
   // Escape to go back
   if (key === "Escape") {
     if (state.phase === "playerCountSelect") {
-      sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html");
+      goHome();
     } else if (state.phase === "difficultySelect") {
       state.phase = "playerCountSelect";
     } else if (state.phase === "mapSelect") {

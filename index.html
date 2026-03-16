@@ -14,10 +14,12 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#120A0E;user-select:none;-webkit-user-select:none}
 canvas{display:block;position:absolute;width:100%;height:100%}
+#game-iframe{display:none;position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:9999}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<iframe id="game-iframe" allow="autoplay; fullscreen" allowfullscreen></iframe>
 <script>
 "use strict";
 // ── Dynamic Game Dimensions ────────────────────────────────────
@@ -27,33 +29,30 @@ let S = 66;
 let TH = S * 0.8660254;
 let PIECE_S = 58;
 
-// Fullscreen persistence across page navigation
-function navigateTo(url) {
-  if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
-  window.location.href = url;
+// Iframe-based game loading (avoids page navigation, preserves fullscreen)
+const gameIframe = document.getElementById("game-iframe");
+function launchGame(url) {
+  gameIframe.src = url;
+  gameIframe.style.display = "block";
 }
-function navigateToDelayed(url, delay) {
-  if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
-  setTimeout(() => { window.location.href = url; }, delay);
+function hideGame() {
+  gameIframe.style.display = "none";
+  gameIframe.src = "";
+  // Re-focus canvas so keyboard events work
+  canvas.focus();
 }
-(function restoreFullscreen() {
-  if (!sessionStorage.getItem("wasFullscreen")) return;
-  sessionStorage.removeItem("wasFullscreen");
-  // Try immediately (works in some browsers during navigation)
-  document.documentElement.requestFullscreen().catch(() => {});
-  // Also restore on first user interaction (capture phase, fires before game handlers)
-  function tryRestore() {
-    if (!document.fullscreenElement) {
+window.addEventListener("message", (e) => {
+  if (e.data === "returnToLobby") {
+    hideGame();
+    state.phase = "lobby";
+  } else if (e.data === "toggleFullscreen") {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
       document.documentElement.requestFullscreen().catch(() => {});
     }
-    for (const evt of ["pointerdown", "mousedown", "click", "keydown"]) {
-      document.removeEventListener(evt, tryRestore, true);
-    }
   }
-  for (const evt of ["pointerdown", "mousedown", "click", "keydown"]) {
-    document.addEventListener(evt, tryRestore, true);
-  }
-})();
+});
 
 const COL = {
   bgDeep: "#120A0E", bgMid: "#261820",
@@ -2396,12 +2395,12 @@ function handleClick(canvasX, canvasY) {
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT)) {
       playSFX("keyclick", 0.125);
-      sessionStorage.setItem("skipBoot", "1"); navigateToDelayed("scarlet-triangle.html", 150);
+      setTimeout(() => launchGame("scarlet-triangle.html"), 150);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_CPU)) {
       playSFX("keyclick", 0.125);
-      sessionStorage.setItem("skipBoot", "1"); navigateToDelayed("scarlet-triangle.html?cpu=1", 150);
+      setTimeout(() => launchGame("scarlet-triangle.html?cpu=1"), 150);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOWTO)) {
