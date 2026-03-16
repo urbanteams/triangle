@@ -26,6 +26,25 @@ let PIECE_S = 58; // piece render side (smaller than slot to prevent overlap)
 // Per-owner tray sizing (gold may be compressed in wide 3P layout)
 let TRAY_GOLD_PIECE_S, TRAY_GOLD_SPACEX, TRAY_GOLD_SPACEY;
 
+// Fullscreen persistence across page navigation
+function navigateTo(url) {
+  if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
+  window.location.href = url;
+}
+function navigateToDelayed(url, delay) {
+  if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
+  setTimeout(() => { window.location.href = url; }, delay);
+}
+if (sessionStorage.getItem("wasFullscreen")) {
+  sessionStorage.removeItem("wasFullscreen");
+  document.addEventListener("click", function _restoreFS() {
+    document.removeEventListener("click", _restoreFS);
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }, { once: true });
+}
+
 // Colors
 const COL = {
   bgDeep: "#120A0E", bgMid: "#261820",
@@ -2007,7 +2026,7 @@ function handleClick(canvasX, canvasY) {
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.back)) {
-      sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
+      sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html");
       return;
     }
     return;
@@ -2066,7 +2085,7 @@ function handleClick(canvasX, canvasY) {
         resize();
       } else if (state.confirmAction === "home") {
         playSFX("keyclick", 0.125);
-        setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html"; }, 150);
+        setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html"); }, 150);
       }
       return;
     }
@@ -2119,7 +2138,7 @@ function handleClick(canvasX, canvasY) {
 
   // Game over - return to main page
   if (state.phase === "gameOver") {
-    sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
+    sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html");
     return;
   }
 
@@ -2406,14 +2425,14 @@ document.addEventListener("keydown", (e) => {
     if (state.phase === "roundResult") {
       advanceFromRoundResult();
     } else if (state.phase === "gameOver") {
-      sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
+      sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html");
     }
   }
 
   // Escape to go back
   if (key === "Escape") {
     if (state.phase === "playerCountSelect") {
-      sessionStorage.setItem("skipBoot", "1"); window.location.href = "index.html";
+      sessionStorage.setItem("skipBoot", "1"); navigateTo("index.html");
     } else if (state.phase === "difficultySelect") {
       state.phase = "playerCountSelect";
     } else if (state.phase === "mapSelect") {

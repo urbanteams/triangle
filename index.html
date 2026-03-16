@@ -27,6 +27,25 @@ let S = 66;
 let TH = S * 0.8660254;
 let PIECE_S = 58;
 
+// Fullscreen persistence across page navigation
+function navigateTo(url) {
+  if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
+  window.location.href = url;
+}
+function navigateToDelayed(url, delay) {
+  if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
+  setTimeout(() => { window.location.href = url; }, delay);
+}
+if (sessionStorage.getItem("wasFullscreen")) {
+  sessionStorage.removeItem("wasFullscreen");
+  document.addEventListener("click", function _restoreFS() {
+    document.removeEventListener("click", _restoreFS);
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }, { once: true });
+}
+
 const COL = {
   bgDeep: "#120A0E", bgMid: "#261820",
   goldBase: "#C9A24A", goldHi: "#E7D08A", goldSh: "#8A6A22",
@@ -2368,12 +2387,12 @@ function handleClick(canvasX, canvasY) {
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT)) {
       playSFX("keyclick", 0.125);
-      setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); window.location.href = "scarlet-triangle.html"; }, 150);
+      sessionStorage.setItem("skipBoot", "1"); navigateToDelayed("scarlet-triangle.html", 150);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_CPU)) {
       playSFX("keyclick", 0.125);
-      setTimeout(() => { sessionStorage.setItem("skipBoot", "1"); window.location.href = "scarlet-triangle.html?cpu=1"; }, 150);
+      sessionStorage.setItem("skipBoot", "1"); navigateToDelayed("scarlet-triangle.html?cpu=1", 150);
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_HOWTO)) {
