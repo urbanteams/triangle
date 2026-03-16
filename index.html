@@ -1457,6 +1457,17 @@ function drawHUD(c, now) {
   c.fillStyle = "#AAB";
   c.fillText("HOME", homeBtn.x + homeBtn.w/2, homeBtn.y + homeBtn.h/2 - 3);
 
+  // How to Play button (spans width of restart + home buttons)
+  const htpBtn = {x: restartBtn.x, y: homeBtn.y + homeBtn.h + 4, w: homeBtn.x + homeBtn.w - restartBtn.x, h: btnH};
+  roundRect(c, htpBtn.x, htpBtn.y, htpBtn.w, htpBtn.h, 4);
+  c.fillStyle = state.hoverHowTo ? "#2A2024" : "#1E1618";
+  c.fill();
+  c.strokeStyle = "#667"; c.lineWidth = 1; c.stroke();
+  c.font = `${(baseFontSize * 0.7)|0}px 'VCR OSD Mono', monospace`;
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = "#AAB";
+  c.fillText("HOW TO PLAY", htpBtn.x + htpBtn.w/2, htpBtn.y + htpBtn.h/2 - 3);
+
   c.restore();
 }
 
@@ -1514,6 +1525,69 @@ function drawConfirmDialog(ctx) {
   ctx.font = `${(btnFontSize * 0.85)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = state.hoverNo ? "#AA9" : "#776";
   ctx.fillText("NO", noBtn.x + noBtn.w/2, noBtn.y + noBtn.h/2 - 3);
+
+  ctx.restore();
+}
+
+function drawInGameHowToPlay(ctx) {
+  if (!state.howToExpanded || state.phase === "lobby") return;
+  ctx.save();
+
+  // Dim overlay
+  ctx.fillStyle = "rgba(14,8,10,0.7)";
+  ctx.fillRect(0, 0, W, H);
+
+  const lines = [
+    "ALTERNATE PLACING NUMBERED TRIANGLES (1\u201310) ONTO THE BOARD.",
+    "AFTER THE LAST PLACEMENT, THE FINAL, EMPTY SLOT BECOMES THE SCARLET TRIANGLE.",
+    "TRIANGLES ADJACENT TO THE SCARLET TRIANGLE SCORE POINTS.",
+    "WHOEVER HAS THE MOST POINTS AT THE END IS THE WINNER!"
+  ];
+
+  const boxW = Math.min(W * 0.88, H * 1.56);
+  const boxR = Math.max(4, H * 0.026);
+
+  const maxBodyFontSize = H * 0.033;
+  const textPad = boxW * 0.04;
+  let bodyFontSize = maxBodyFontSize;
+  for (const line of lines) {
+    ctx.font = `${bodyFontSize|0}px 'VCR OSD Mono', monospace`;
+    while (bodyFontSize > 6 && ctx.measureText(line).width > boxW - textPad * 2) {
+      bodyFontSize -= 0.5;
+      ctx.font = `${bodyFontSize|0}px 'VCR OSD Mono', monospace`;
+    }
+  }
+
+  const titleFontSize = Math.max(8, Math.min(H * 0.07, bodyFontSize * 2.8));
+  const lineH = bodyFontSize * 2.2;
+  const titleGap = titleFontSize * 1.2;
+  const pad = H * 0.05;
+  const closeH = H * 0.06;
+  const contentH = titleGap + (lines.length - 1) * lineH;
+  const boxH = contentH + closeH + pad * 2 + H * 0.04;
+  const boxX = CX - boxW/2, boxY = CY - boxH/2;
+
+  roundRect(ctx, boxX, boxY, boxW, boxH, boxR);
+  ctx.fillStyle = "rgba(36,20,26,0.95)"; ctx.fill();
+  ctx.strokeStyle = COL.goldBase; ctx.lineWidth = 2; ctx.stroke();
+
+  const contentArea = boxH - closeH;
+  const titleY = boxY + (contentArea - contentH) / 2;
+
+  ctx.font = `${titleFontSize|0}px 'VCR OSD Mono', monospace`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = COL.scarletBright;
+  ctx.fillText("HOW TO PLAY", CX, titleY);
+
+  ctx.font = `${bodyFontSize|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#CCD";
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], CX, titleY + titleGap + i * lineH);
+  }
+
+  ctx.font = `${Math.max(5, H * 0.022)|0}px 'VCR OSD Mono', monospace`;
+  ctx.fillStyle = "#667";
+  ctx.fillText("CLICK ANYWHERE TO CLOSE", CX, boxY + boxH - H * 0.03);
 
   ctx.restore();
 }
@@ -1674,16 +1748,23 @@ function drawLobby(c, now) {
     const arrow = state.howToExpanded ? "\u25B2" : "\u25BC";
     c.fillText(arrow + " HOW TO PLAY " + arrow, CX, bht.y + bht.h/2);
 
+    // Fullscreen hint
+    c.globalAlpha = 0.7;
+    c.font = `${(btnFontSize * 0.6)|0}px 'VCR OSD Mono', monospace`;
+    c.fillStyle = "#778";
+    c.fillText("PRESS F FOR FULL SCREEN", CX, bht.y + bht.h/2 + btnFontSize * 0.8);
+    c.globalAlpha = 1;
+
     if (state.howToExpanded) {
       // Dim overlay
       c.fillStyle = "rgba(14,8,10,0.7)";
       c.fillRect(0, 0, W, H);
 
       const lines = [
-        "Alternate placing numbered triangles (1\u201310) onto the board.",
-        "After the last placement, the final, empty slot becomes the Scarlet Triangle.",
-        "Triangles adjacent to the Scarlet Triangle score points.",
-        "Whoever has the most points at the end is the winner!"
+        "ALTERNATE PLACING NUMBERED TRIANGLES (1\u201310) ONTO THE BOARD.",
+        "AFTER THE LAST PLACEMENT, THE FINAL, EMPTY SLOT BECOMES THE SCARLET TRIANGLE.",
+        "TRIANGLES ADJACENT TO THE SCARLET TRIANGLE SCORE POINTS.",
+        "WHOEVER HAS THE MOST POINTS AT THE END IS THE WINNER!"
       ];
 
       // Size everything proportionally to canvas
@@ -1731,7 +1812,7 @@ function drawLobby(c, now) {
 
       c.font = `${Math.max(5, H * 0.022)|0}px 'VCR OSD Mono', monospace`;
       c.fillStyle = "#667";
-      c.fillText("Click anywhere to close", CX, boxY + boxH - H * 0.03);
+      c.fillText("CLICK ANYWHERE TO CLOSE", CX, boxY + boxH - H * 0.03);
     }
   }
   else if (state.phase === "waiting") {
@@ -2230,6 +2311,12 @@ function startBoot() {
 }
 
 function handleClick(canvasX, canvasY) {
+  // Close How to Play overlay if open (works in any phase)
+  if (state.howToExpanded && state.phase !== "lobby") {
+    state.howToExpanded = false;
+    return;
+  }
+
   if (state.phase === "splash") { startBoot(); return; }
   if (state.phase === "boot") return;
   const btns = getButtons();
@@ -2446,6 +2533,13 @@ function handleClick(canvasX, canvasY) {
       state.confirmAction = "home";
       return;
     }
+
+    // How to Play button
+    const htpBtn = {x: restartBtn.x, y: homeBtn.y + homeBtn.h + 4, w: homeBtn.x + homeBtn.w - restartBtn.x, h: btnH};
+    if (pointInRect(canvasX, canvasY, htpBtn)) {
+      state.howToExpanded = true;
+      return;
+    }
   }
 
   // Playing - game actions
@@ -2607,6 +2701,8 @@ function handleMouseMove(canvasX, canvasY) {
 
   state.hoverRestart = pointInRect(canvasX, canvasY, restartBtn);
   state.hoverHome = pointInRect(canvasX, canvasY, homeBtn);
+  const htpBtn = {x: restartBtn.x, y: homeBtn.y + homeBtn.h + 4, w: homeBtn.x + homeBtn.w - restartBtn.x, h: bh};
+  state.hoverHowTo = pointInRect(canvasX, canvasY, htpBtn);
 
   const myIdx = Net.myIndex;
   const isMyTurn = state.currentPlayer === myIdx;
@@ -2681,6 +2777,16 @@ document.addEventListener("keydown", (e) => {
       state.joinCode += key.toUpperCase();
       state.lobbyError = "";
       playSFX("keyclick", 0.125);
+    }
+    return;
+  }
+
+  // Fullscreen toggle
+  if (key === "f" || key === "F") {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen().catch(() => {});
     }
     return;
   }
@@ -2830,6 +2936,7 @@ function frame(now) {
     drawRoundResult(ctx);
     drawGameOver(ctx);
     drawConfirmDialog(ctx);
+    drawInGameHowToPlay(ctx);
     drawGoldFlash(ctx);
     drawToasts(ctx, dt * 1000);
     drawDisconnected(ctx, dt);
