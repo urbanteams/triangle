@@ -35,15 +35,24 @@ function navigateToDelayed(url, delay) {
   if (document.fullscreenElement) sessionStorage.setItem("wasFullscreen", "1");
   setTimeout(() => { window.location.href = url; }, delay);
 }
-if (sessionStorage.getItem("wasFullscreen")) {
+(function restoreFullscreen() {
+  if (!sessionStorage.getItem("wasFullscreen")) return;
   sessionStorage.removeItem("wasFullscreen");
-  document.addEventListener("click", function _restoreFS() {
-    document.removeEventListener("click", _restoreFS);
+  // Try immediately (works in some browsers during navigation)
+  document.documentElement.requestFullscreen().catch(() => {});
+  // Also restore on first user interaction (capture phase, fires before game handlers)
+  function tryRestore() {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
     }
-  }, { once: true });
-}
+    for (const evt of ["pointerdown", "mousedown", "click", "keydown"]) {
+      document.removeEventListener(evt, tryRestore, true);
+    }
+  }
+  for (const evt of ["pointerdown", "mousedown", "click", "keydown"]) {
+    document.addEventListener(evt, tryRestore, true);
+  }
+})();
 
 // Colors
 const COL = {
