@@ -14,6 +14,12 @@ canvas{display:block;position:absolute;width:100%;height:100%}
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<div id="videoOverlay" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.88);flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+  <button onclick="hideVideoOverlay()" style="font-family:'VCR OSD Mono',monospace;font-size:16px;line-height:1.6;color:#CCD;background:#2A1820;border:1px solid #C9A24A;padding:10px 28px;cursor:pointer;letter-spacing:2px;">X  CLOSE VIDEO</button>
+  <iframe id="videoIframe" src="" width="1403" height="743" title="How to Play Scarlet Triangle in 2 Minutes" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen style="max-width:92vw;max-height:75vh;width:92vw;height:calc(92vw * 743/1403);"></iframe>
+</div>
+
 <script>
 "use strict";
 // ── Dynamic Game Dimensions ────────────────────────────────────
@@ -588,6 +594,7 @@ function freshState() {
     hoverHome: false,
     hoverHowTo: false,
     howToExpanded: false,
+    hoverVideoLink: false,
     // difficulty select hover states (CPU mode)
     hoverEasy: false,
     hoverMedium: false,
@@ -1482,6 +1489,8 @@ function drawConfirmDialog(ctx) {
   ctx.restore();
 }
 
+let videoLinkRect = null;
+
 function drawHowToPlay(ctx) {
   if (!state.howToExpanded) return;
   ctx.save();
@@ -1518,7 +1527,9 @@ function drawHowToPlay(ctx) {
   const titleGap = titleFontSize * 1.2;
   const pad = H * 0.05;
   const closeH = H * 0.06;
-  const contentH = titleGap + (lines.length - 1) * lineH;
+  const videoLinkFontSize = Math.max(5, H * 0.026);
+  const videoLinkGap = videoLinkFontSize * 2.8;
+  const contentH = titleGap + (lines.length - 1) * lineH + videoLinkGap;
   const boxH = contentH + closeH + pad * 2 + H * 0.04;
   const boxX = CX - boxW/2, boxY = CY - boxH/2;
 
@@ -1539,6 +1550,24 @@ function drawHowToPlay(ctx) {
   for (let i = 0; i < lines.length; i++) {
     ctx.fillText(lines[i], CX, titleY + titleGap + i * lineH);
   }
+
+  // "Click to see video" link — centered between last rule and "CLICK ANYWHERE TO CLOSE"
+  const lastRuleY = titleY + titleGap + (lines.length - 1) * lineH;
+  const closeTextY = boxY + boxH - H * 0.03;
+  const videoLinkY = (lastRuleY + closeTextY) / 2;
+  const videoLinkText = "\u25BA CLICK TO SEE VIDEO";
+  ctx.font = `${videoLinkFontSize|0}px 'VCR OSD Mono', monospace`;
+  const videoLinkColor = state.hoverVideoLink ? "#9DCFFF" : "#5AACEE";
+  ctx.fillStyle = videoLinkColor;
+  ctx.fillText(videoLinkText, CX, videoLinkY);
+  const vlw = ctx.measureText(videoLinkText).width;
+  ctx.strokeStyle = videoLinkColor;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(CX - vlw / 2, videoLinkY + videoLinkFontSize * 0.65);
+  ctx.lineTo(CX + vlw / 2, videoLinkY + videoLinkFontSize * 0.65);
+  ctx.stroke();
+  videoLinkRect = { x: CX - vlw / 2 - 4, y: videoLinkY - videoLinkFontSize, w: vlw + 8, h: videoLinkFontSize * 2 };
 
   ctx.font = `${Math.max(5, H * 0.022)|0}px 'VCR OSD Mono', monospace`;
   ctx.fillStyle = "#667";
@@ -1989,7 +2018,13 @@ function pointInRect(px, py, r) {
 function handleClick(canvasX, canvasY) {
   // Close How to Play overlay if open
   if (state.howToExpanded) {
+    if (videoLinkRect && pointInRect(canvasX, canvasY, videoLinkRect)) {
+      showVideoOverlay();
+      return;
+    }
     state.howToExpanded = false;
+    state.hoverVideoLink = false;
+    videoLinkRect = null;
     return;
   }
 
@@ -2274,6 +2309,14 @@ function updateShakeTweens(now) {
 }
 
 function handleMouseMove(canvasX, canvasY) {
+  // Video link hover (How to Play overlay)
+  if (state.howToExpanded) {
+    state.hoverVideoLink = !!(videoLinkRect && pointInRect(canvasX, canvasY, videoLinkRect));
+    canvas.style.cursor = state.hoverVideoLink ? "pointer" : "default";
+    return;
+  }
+  canvas.style.cursor = "default";
+
   // Confirmation dialog hovers
   if (state.phase === "confirm") {
     const pw = Math.max(60, W * 0.33);
@@ -2376,6 +2419,7 @@ function handleMouseMove(canvasX, canvasY) {
   state.hoverRestart = false;
   state.hoverHome = false;
   state.hoverHowTo = false;
+  state.hoverVideoLink = false;
 }
 
 // Mouse/touch events
@@ -2814,6 +2858,20 @@ function frame(now) {
 }
 
 requestAnimationFrame(frame);
+
+function showVideoOverlay() {
+  const overlay = document.getElementById('videoOverlay');
+  const iframe = document.getElementById('videoIframe');
+  iframe.src = "https://www.youtube.com/embed/aZkC_9Q_T3A?autoplay=1";
+  overlay.style.display = "flex";
+}
+
+function hideVideoOverlay() {
+  const overlay = document.getElementById('videoOverlay');
+  const iframe = document.getElementById('videoIframe');
+  overlay.style.display = "none";
+  iframe.src = "";
+}
 </script>
 
 <!-- CRT Television Overlay -->

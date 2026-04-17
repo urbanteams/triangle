@@ -46,6 +46,7 @@ State machine drives the entire game loop. Two rounds per match; starting player
 - Animation timings are precisely specified in Section 12 (placement pop: 140ms, denied shake: 120ms, etc.)
 - Progressive intensity: visual effects escalate as board fills (milestones at 10, 15, 18, 20 placements)
 - End-of-round reveal sequence: ~900ms total with staggered highlights and floating score labels
+- **How to Play overlay**: Canvas-drawn modal with a "▶ CLICK TO SEE VIDEO" link at the bottom. The link is centered between the last rule line and the "CLICK ANYWHERE TO CLOSE" hint. Clicking it opens a DOM `#videoOverlay` div (z-index 10000) containing a YouTube iframe — the iframe `src` is set on open and cleared on close to stop playback. `videoLinkRect` is updated each draw frame for hit-testing.
 
 ### Sound Effects
 Audio uses both synthesized sounds (Web Audio API) and external mp3 files loaded at startup via `fetch` + `decodeAudioData`.
