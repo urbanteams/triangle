@@ -2254,13 +2254,11 @@ function drawLobby(c, now) {
         "WHOEVER HAS THE MOST POINTS AT THE END IS THE WINNER!"
       ];
 
-      // Size everything proportionally to canvas
       const boxW = Math.min(W * 0.88, H * 1.56);
       const boxR = Math.max(4, H * 0.026);
 
-      // Determine body font size that fits all lines within the box width
       const maxBodyFontSize = H * 0.033;
-      const textPad = boxW * 0.04; // horizontal padding inside box
+      const textPad = boxW * 0.04;
       let bodyFontSize = maxBodyFontSize;
       for (const line of lines) {
         c.font = `${bodyFontSize|0}px 'VCR OSD Mono', monospace`;
@@ -2275,7 +2273,9 @@ function drawLobby(c, now) {
       const titleGap = titleFontSize * 1.2;
       const pad = H * 0.05;
       const closeH = H * 0.06;
-      const contentH = titleGap + (lines.length - 1) * lineH;
+      const videoLinkFontSize = Math.max(5, H * 0.026);
+      const videoLinkGap = videoLinkFontSize * 2.8;
+      const contentH = titleGap + (lines.length - 1) * lineH + videoLinkGap;
       const boxH = contentH + closeH + pad * 2 + H * 0.04;
       const boxX = CX - boxW/2, boxY = CY - boxH/2;
 
@@ -2297,9 +2297,29 @@ function drawLobby(c, now) {
         c.fillText(lines[i], CX, titleY + titleGap + i * lineH);
       }
 
+      // "Click to see video" link — centered between last rule and close hint
+      const lastRuleY = titleY + titleGap + (lines.length - 1) * lineH;
+      const closeTextY = boxY + boxH - H * 0.03;
+      const videoLinkY = (lastRuleY + closeTextY) / 2;
+      const videoLinkText = "\u25BA CLICK TO SEE VIDEO";
+      c.font = `${videoLinkFontSize|0}px 'VCR OSD Mono', monospace`;
+      const videoLinkColor = state.hoverVideoLink ? "#9DCFFF" : "#5AACEE";
+      c.fillStyle = videoLinkColor;
+      c.fillText(videoLinkText, CX, videoLinkY);
+      const vlw = c.measureText(videoLinkText).width;
+      c.strokeStyle = videoLinkColor;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(CX - vlw / 2, videoLinkY + videoLinkFontSize * 0.65);
+      c.lineTo(CX + vlw / 2, videoLinkY + videoLinkFontSize * 0.65);
+      c.stroke();
+      videoLinkRect = { x: CX - vlw / 2 - 4, y: videoLinkY - videoLinkFontSize, w: vlw + 8, h: videoLinkFontSize * 2 };
+
       c.font = `${Math.max(5, H * 0.022)|0}px 'VCR OSD Mono', monospace`;
       c.fillStyle = "#667";
-      c.fillText("CLICK ANYWHERE TO CLOSE", CX, boxY + boxH - H * 0.03);
+      c.fillText("CLICK ANYWHERE TO CLOSE", CX, closeTextY);
+    } else {
+      videoLinkRect = null;
     }
   }
   else if (state.phase === "waiting") {
@@ -2973,7 +2993,13 @@ function handleClick(canvasX, canvasY) {
   if (state.phase === "lobby") {
     // Close How to Play overlay if open
     if (state.howToExpanded) {
+      if (videoLinkRect && pointInRect(canvasX, canvasY, videoLinkRect)) {
+        showVideoOverlay();
+        return;
+      }
       state.howToExpanded = false;
+      state.hoverVideoLink = false;
+      videoLinkRect = null;
       return;
     }
     if (pointInRect(canvasX, canvasY, btns.BTN_CREATE)) {
@@ -3351,6 +3377,11 @@ function handleMouseMove(canvasX, canvasY) {
 
   // Button hover for lobby
   if (state.phase === "lobby") {
+    if (state.howToExpanded) {
+      state.hoverVideoLink = !!(videoLinkRect && pointInRect(canvasX, canvasY, videoLinkRect));
+      canvas.style.cursor = state.hoverVideoLink ? "pointer" : "default";
+      return;
+    }
     state.hoverCreate = pointInRect(canvasX, canvasY, btns.BTN_CREATE);
     state.hoverJoin = pointInRect(canvasX, canvasY, btns.BTN_JOIN);
     state.hoverHotSeat = pointInRect(canvasX, canvasY, btns.BTN_HOTSEAT);
